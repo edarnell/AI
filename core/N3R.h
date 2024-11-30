@@ -9,31 +9,31 @@ namespace N3R {
 
 // Node structure
 struct N {
-    std::string id; // Node identifier
-    double W;       // Weight
+    std::string n; // Node identifier
+    double w;       // Weight
 };
 
 // Synapse structure
 struct S {
-    std::string src; // Source node
-    std::string tgt; // Target node
-    double W;        // Weight
-    double D;        // Delay
+    std::string s; // Source node
+    std::string t; // Target node
+    double w;        // Weight
+    double d;        // Delay
 };
 
 // Neural Network class
 class NNet {
 public:
     NNet();                              // Constructor
-    void addN(const std::string& id, double W);       // Add node
-    void addS(const std::string& src, const std::string& tgt, double W, double D); // Add synapse
+    void addN(const std::string& n, double w);       // Add node
+    void addS(const std::string& s, const std::string& t, double w, double d); // Add synapse
     void updW(int it);                  // Update weights
     void fwd(double I, int it);         // Forward propagation
     void lowW() const;                  // Expose low-confidence nodes and synapses
 
 private:
-    std::unordered_map<std::string, N> N; // Nodes
-    std::vector<S> S;                     // Synapses
+    std::unordered_map<std::string, N> ns; // Nodes
+    std::vector<S> ss;                     // Synapses
 };
 
 } // namespace N3R

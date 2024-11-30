@@ -1,98 +1,121 @@
 
 #include "L3R.h"
+#include "N3R.h"
+#include "S3R.h"
 #include <iostream>
 #include <sstream>
 #include <unordered_map>
 #include <vector>
+#include <algorithm>
 
 namespace N3R {
 
 // Constructor
 L3R::L3R() : errorCount(0) {}
 
-// Dynamic inference of logical operators based on context
+// Infer logical operators dynamically, including nested logic
 bool L3R::isPotentialOperator(const std::string& token, const std::string& prevToken, const std::string& nextToken) const {
-    // Common patterns for logical operators
-    static const std::vector<std::string> negationCues = {"not", "without", "never"};
-    static const std::vector<std::string> conjunctionCues = {"and", ",", "with"};
-    static const std::vector<std::string> disjunctionCues = {"or", "either"};
+    static const std::unordered_map<std::string, std::string> logicalSynonyms = {
+        {"AND", "AND"}, {"&&", "AND"}, {"with", "AND"}, {"plus", "AND"},
+        {"OR", "OR"}, {"||", "OR"}, {"either", "OR"}, {"or", "OR"},
+        {"NOT", "NOT"}, {"!", "NOT"}, {"never", "NOT"},
+        {"IMPLIES", "IMPLIES"}, {"->", "IMPLIES"}, {"leads to", "IMPLIES"}
+    };
 
-    // Check for negation
-    if (std::find(negationCues.begin(), negationCues.end(), token) != negationCues.end() ||
-        token == "!" || (prevToken == "no" && nextToken == "")) {
-        return true; // Implying NOT
+    // Direct match
+    if (logicalSynonyms.find(token) != logicalSynonyms.end()) return true;
+
+    // Infer from sentence structure
+    if (prevToken == "if" && token == "then") return true; // Implies
+    if (token == "," && nextToken == "or") return true; // Logical OR
+
+    // Highlight ambiguity dynamically
+    if (!token.empty()) {
+        std::cout << "Ambiguous token: " << token
+                  << ". Could this be a logical operator or operand? Please clarify.
+";
     }
-
-    // Check for conjunction
-    if (std::find(conjunctionCues.begin(), conjunctionCues.end(), token) != conjunctionCues.end()) {
-        return true; // Implying AND
-    }
-
-    // Check for disjunction
-    if (std::find(disjunctionCues.begin(), disjunctionCues.end(), token) != disjunctionCues.end()) {
-        return true; // Implying OR
-    }
-
     return false;
 }
 
-// Evaluate realism dynamically based on inferred operators and context
-double L3R::evaluateRealism(const std::string& input) {
-    if (input.empty()) {
-        errorCount++;
-        failedTests.push_back("Empty input provided for realism evaluation");
-        std::cout << "Ambiguity: Input is empty. Cannot evaluate realism.
-";
-        return 0.0; // Completely unrealistic
-    }
-
-    double realismScore = 1.0; // Start fully realistic
+// Validate logical input as a pure logical statement
+bool L3R::validateLogicalExpression(const std::string& input) {
     std::istringstream iss(input);
     std::string token, prevToken, nextToken;
+    int operatorCount = 0, operandCount = 0;
     std::vector<std::string> tokens;
 
+    // Tokenize input
     while (iss >> token) {
         tokens.push_back(token);
     }
 
     for (size_t i = 0; i < tokens.size(); ++i) {
         prevToken = (i > 0) ? tokens[i - 1] : "";
+        token = tokens[i];
         nextToken = (i < tokens.size() - 1) ? tokens[i + 1] : "";
 
-        if (isPotentialOperator(tokens[i], prevToken, nextToken)) {
-            realismScore *= dynamicAdjustOperator(tokens[i], prevToken, nextToken);
+        if (isPotentialOperator(token, prevToken, nextToken)) {
+            operatorCount++;
+        } else {
+            operandCount++;
         }
     }
 
-    realismScore = std::max(0.0, std::min(1.0, realismScore)); // Clamp to [0, 1]
-    std::cout << "Realism score: " << realismScore << "
-";
-    return realismScore;
-}
-
-// Dynamic adjustment based on operator and context
-double L3R::dynamicAdjustOperator(const std::string& token, const std::string& prevToken, const std::string& nextToken) const {
-    double adjustment = 1.0;
-
-    if (token == "and" || token == ",") {
-        adjustment -= 0.05; // Conjunctions reduce certainty slightly
-    } else if (token == "or" || token == "either") {
-        adjustment -= 0.1; // Disjunctions increase uncertainty
-    } else if (token == "not" || token == "!") {
-        adjustment -= 0.2; // Negations reduce certainty further
-    } else if (prevToken == "no" && nextToken.empty()) {
-        adjustment -= 0.15; // Implicit negation from "no"
+    if (operatorCount >= operandCount) {
+        errorCount++;
+        failedTests.push_back("Invalid logical expression: " + input);
+        return false;
     }
-
-    std::cout << "Operator "" << token << "" adjusted realism by: " << adjustment << "
-";
-    return adjustment;
+    return true;
 }
 
-// Debug logical state
+// Detect ambiguities and provide structured metadata
+AmbiguityInfo L3R::detectAmbiguity(const std::string& input, const std::string& context) const {
+    AmbiguityInfo info;
+    info.context = context;
+
+    // Tokenize input and analyze
+    std::istringstream iss(input);
+    std::string token, prevToken, nextToken;
+    std::vector<std::string> tokens;
+    while (iss >> token) tokens.push_back(token);
+
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        prevToken = (i > 0) ? tokens[i - 1] : "";
+        token = tokens[i];
+        nextToken = (i < tokens.size() - 1) ? tokens[i + 1] : "";
+
+        if (!isPotentialOperator(token, prevToken, nextToken)) {
+            info.phrase = token;
+            info.interpretations = {"Operator?", "Operand?"}; // Example options
+            info.confidence = 0.5; // Low confidence due to ambiguity
+            break;
+        }
+    }
+    return info;
+}
+
+// Debugging utility: Extend to include logic tests and modeling states
 void L3R::dbg() const {
     std::cout << "Logical State: Error count = " << errorCount << "
 ";
+
+    // Debug logical validation results
+    for (const auto& test : failedTests) {
+        std::cout << "Failed Test: " << test << "
+";
+    }
+
+    // Debug NNet states
+    if (NNet) {
+        NNet->dbg();
+    }
+
+    // Debug S3R synapses
+    for (const auto& syn : synapses) {
+        syn.dbg();
+    }
 }
 
 } // namespace N3R
