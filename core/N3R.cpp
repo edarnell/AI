@@ -1,4 +1,3 @@
-
 #include <iostream>
 #include <unordered_map>
 #include <vector>
@@ -10,8 +9,7 @@ namespace N3R {
 
 // Constructor
 NNet::NNet() {
-    std::cout << "Initializing Neural Network...
-";
+    std::cout << "Initializing Neural Network...\n";
 }
 
 // Add Node
@@ -36,26 +34,9 @@ void NNet::uN(const std::vector<double>& fb) {
     }
 }
 
-// Update synaptic weights with decay, distance, and feedback
-void NNet::uS(int t, const std::vector<double>& fb) {
-    size_t iF = 0;
-    for (auto& s : ss) {
-        if (ns.find(s.s) != ns.end() && ns.find(s.t) != ns.end()) {
-            double dT = std::exp(-0.01 * t); // Time decay
-            double dD = 1.0 / (1.0 + std::abs(ns[s.s].w - ns[s.t].w)); // Distance effect
-            double adjFb = (iF < fb.size()) ? fb[iF++] : 1.0; // Feedback adjustment
-
-            s.w *= dT;  // Apply time decay
-            s.w *= dD;  // Apply distance effect
-            s.w *= adjFb; // Apply feedback adjustment
-            s.w = std::max(0.0, std::min(1.0, s.w)); // Clamp to [0, 1]
-        }
-    }
-}
-
 // Forward propagate with input, time decay, and feedback
-void NNet::fwd(double I, int t, const std::vector<double>& fb) {
-    double dT = std::exp(-0.01 * t); // Time decay
+void NNet::fwd(double I, int n) {
+    double dT = std::exp(-0.01 * n); // Time decay
     size_t iF = 0;
 
     for (auto& [id, n] : ns) {
@@ -68,41 +49,37 @@ void NNet::fwd(double I, int t, const std::vector<double>& fb) {
     }
 
     // Update synaptic weights
-    uS(t, fb);
+    uS(n, fb);
 }
 
 // Expose nodes and synapses with low confidence (weight < 0.5)
 void NNet::lowW() const {
+    std::cout << "Low-confidence Nodes and Synapses:\n";
     for (const auto& [id, n] : ns) {
         if (n.w < 0.5) {
-            std::cout << "Low-confidence node: " << id << " with weight " << n.w << "
-";
+            std::cout << "  Node [" << id << "] Weight: " << n.w << "\n";
         }
     }
     for (const auto& s : ss) {
         if (s.w < 0.5) {
-            std::cout << "Low-confidence synapse: " << s.s << " -> " << s.t
-                      << " with weight " << s.w << "
-";
+            std::cout << "  Synapse [" << s.s << " -> " << s.t
+                      << "] Weight: " << s.w << "\n";
         }
     }
 }
 
 // Debugging Utility
 void NNet::dbg() const {
-    std::cout << "Node States:
-";
+    std::cout << "Node States:\n";
     for (const auto& [id, n] : ns) {
-        std::cout << "Node: " << id << " Weight: " << n.w << "
-";
+        std::cout << "  Node [" << id << "] Weight: " << n.w << "\n";
     }
-    std::cout << "Synapse States:
-";
+    std::cout << "Synapse States:\n";
     for (const auto& s : ss) {
-        std::cout << "Synapse: " << s.s << " -> " << s.t
-                  << " Weight: " << s.w << " Distance: " << s.d << "
-";
+        std::cout << "  Synapse [" << s.s << " -> " << s.t
+                  << "] Weight: " << s.w << " Distance: " << s.d << "\n";
     }
 }
 
 } // namespace N3R
+
