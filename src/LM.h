@@ -7,39 +7,19 @@
 
 namespace LM {
 
-// Initializes embeddings and co-occurrence matrix
-void initialize(size_t embeddingDim);
-
-// Builds co-occurrence matrix from a dataset
-void buildCooccurrenceMatrix(const std::string& datasetPath, size_t windowSize);
-
-// Trains embeddings using Hebbian-inspired updates
-void trainHebbianEmbeddings(size_t epochs);
-
-// Normalizes embeddings to maintain consistency
-void normalizeEmbeddings();
-
-// Retrieves the embedding for a specific word
-std::vector<float> getEmbedding(const std::string& word);
-
-// Adds a new word to the vocabulary
-void addNewWord(const std::string& word);
-
-// Saves embeddings to a file
-void saveEmbeddings(const std::string& outputPath);
-
-// Loads embeddings from a file
-void loadEmbeddings(const std::string& inputPath);
-
-// Adaptive training with dynamically adjusted parameters
-void trainWithAdaptiveParameters(const std::string& datasetPath, size_t epochs);
-
-// Expands embedding dimensions dynamically
-void expandEmbeddingDimensions(size_t newDim);
-
-// Dynamically initializes parameters based on dataset properties
-void initializeDynamicParameters(const std::string& datasetPath);
+void init(size_t dim);                     // Initialize embeddings and matrix
+void bldMtx(const std::string& path, size_t win); // Build co-occurrence matrix
+void trn(size_t epochs);                   // Train embeddings
+void norm();                               // Normalize embeddings
+std::vector<float> getVec(const std::string& word);   // Get embedding vector
+void addWrd(const std::string& word);      // Add new word to vocabulary
+void save(const std::string& path);        // Save embeddings
+void load(const std::string& path);        // Load embeddings
+void trnAdpt(const std::string& path, size_t epochs); // Train with adaptive params
+void expDim(size_t newDim);                // Expand dimensions dynamically
+void initPrm(const std::string& path);     // Init params dynamically
 
 } // namespace LM
 
 #endif // LM_H
+

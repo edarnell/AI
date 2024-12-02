@@ -1,7 +1,6 @@
 #include "LM.h"
 #include <cmath>
 #include <fstream>
-#include <iostream>
 #include <sstream>
 #include <stdexcept>
 #include <unordered_map>
@@ -11,190 +10,173 @@
 
 namespace LM {
 
-// Internal storage
+// Storage
 namespace {
-std::unordered_map<std::string, std::unordered_map<std::string, float>> cooccurrenceMatrix;
-std::unordered_map<std::string, std::vector<float>> wordEmbeddings;
-size_t embeddingDim = 50;
-float learningRate = 0.01f;
-float decayRate = 0.001f;
+std::unordered_map<std::string, std::unordered_map<std::string, float>> mtx; // Co-occurrence matrix
+std::unordered_map<std::string, std::vector<float>> emb; // Word vectors
+size_t dim = 50;       // Embedding dimension
+float lr = 0.01f;      // Learning rate
+float decay = 0.001f;  // Decay rate
 
-// Utility functions
+// Utilities
 std::vector<std::string> tokenize(const std::string& text);
-std::string toLowerCase(const std::string& text);
-std::string stripPunctuation(const std::string& text);
+std::string toLower(const std::string& text);
+std::string stripPunct(const std::string& text);
 }
 
-// Initializes embeddings and clears the co-occurrence matrix
-void initialize(size_t dim) {
-    embeddingDim = dim;
-    cooccurrenceMatrix.clear();
-    wordEmbeddings.clear();
+// Initialize
+void init(size_t d) {
+    dim = d;
+    mtx.clear();
+    emb.clear();
 }
 
-// Builds co-occurrence matrix from a dataset
-void buildCooccurrenceMatrix(const std::string& datasetPath, size_t windowSize) {
-    std::ifstream file(datasetPath);
-    if (!file.is_open()) {
-        throw std::runtime_error("Failed to open dataset file.");
-    }
+// Build co-occurrence matrix
+void bldMtx(const std::string& path, size_t win) {
+    std::ifstream file(path);
+    if (!file.is_open()) throw std::runtime_error("Failed to open file.");
 
     std::string line;
     while (std::getline(file, line)) {
-        auto tokens = tokenize(stripPunctuation(toLowerCase(line)));
-
+        auto tokens = tokenize(stripPunct(toLower(line)));
         for (size_t i = 0; i < tokens.size(); ++i) {
-            for (size_t j = std::max(0, static_cast<int>(i) - static_cast<int>(windowSize));
-                 j < std::min(tokens.size(), i + windowSize + 1);
-                 ++j) {
-                if (i != j) {
-                    cooccurrenceMatrix[tokens[i]][tokens[j]] += 1.0f;
+            for (size_t j = std::max(0, static_cast<int>(i) - static_cast<int>(win));
+                 j < std::min(tokens.size(), i + win + 1); ++j) {
+                if (i != j) mtx[tokens[i]][tokens[j]] += 1.0f;
+            }
+        }
+    }
+}
+
+// Hebbian update
+void upd(const std::string& wrd, const std::string& ctx, float cnt) {
+    auto& wVec = emb[wrd];
+    auto& cVec = emb[ctx];
+    for (size_t i = 0; i < dim; ++i) {
+        wVec[i] += lr * cnt * cVec[i];
+        cVec[i] += lr * cnt * wVec[i];
+        wVec[i] *= (1.0f - decay);
+        cVec[i] *= (1.0f - decay);
+    }
+}
+
+// Train
+void trn(size_t epochs) {
+    for (size_t e = 0; e < epochs; ++e) {
+        for (const auto& [wrd, ctxs] : mtx) {
+            for (const auto& [ctx, cnt] : ctxs) {
+                if (emb.find(ctx) != emb.end()) {
+                    upd(wrd, ctx, log(1 + cnt));
                 }
             }
         }
     }
-
-    std::cout << "Co-occurrence matrix built successfully.\n";
 }
 
-// Hebbian-inspired weight update
-void updateHebbianWeights(const std::string& word, const std::string& contextWord, float coOccurrence) {
-    auto& wordVec = wordEmbeddings[word];
-    auto& contextVec = wordEmbeddings[contextWord];
-
-    for (size_t i = 0; i < embeddingDim; ++i) {
-        // Hebbian learning: Reinforce similarity
-        wordVec[i] += learningRate * coOccurrence * contextVec[i];
-        contextVec[i] += learningRate * coOccurrence * wordVec[i];
-
-        // Apply decay to prevent runaway reinforcement
-        wordVec[i] *= (1.0f - decayRate);
-        contextVec[i] *= (1.0f - decayRate);
+// Normalize
+void norm() {
+    for (auto& [wrd, vec] : emb) {
+        float mag = std::sqrt(std::inner_product(vec.begin(), vec.end(), vec.begin(), 0.0f));
+        if (mag > 0) for (float& v : vec) v /= mag;
     }
 }
 
-// Trains embeddings using Hebbian updates
-void trainHebbianEmbeddings(size_t epochs) {
-    for (size_t epoch = 0; epoch < epochs; ++epoch) {
-        for (const auto& [word, coOccurrences] : cooccurrenceMatrix) {
-            for (const auto& [contextWord, count] : coOccurrences) {
-                if (wordEmbeddings.find(contextWord) != wordEmbeddings.end()) {
-                    updateHebbianWeights(word, contextWord, log(1 + count));
-                }
-            }
-        }
-        std::cout << "Epoch " << epoch + 1 << "/" << epochs << " completed.\n";
-    }
+// Get vector
+std::vector<float> getVec(const std::string& wrd) {
+    return emb.count(wrd) ? emb[wrd] : std::vector<float>(dim, 0.0f);
 }
 
-// Normalizes embeddings to maintain consistency
-void normalizeEmbeddings() {
-    for (auto& [word, vector] : wordEmbeddings) {
-        float magnitude = 0.0f;
-        for (float val : vector) {
-            magnitude += val * val;
-        }
-        magnitude = std::sqrt(magnitude);
-
-        if (magnitude > 0) {
-            for (float& val : vector) {
-                val /= magnitude;
-            }
-        }
-    }
-    std::cout << "Embeddings normalized.\n";
+// Add word
+void addWrd(const std::string& wrd) {
+    if (!emb.count(wrd)) emb[wrd] = std::vector<float>(dim, 0.1f);
 }
 
-// Retrieves the embedding for a specific word
-std::vector<float> getEmbedding(const std::string& word) {
-    if (wordEmbeddings.find(word) != wordEmbeddings.end()) {
-        return wordEmbeddings[word];
-    }
-    return std::vector<float>(embeddingDim, 0.0f); // Return zero vector if word is unknown
-}
-
-// Adds a new word to the vocabulary
-void addNewWord(const std::string& word) {
-    if (wordEmbeddings.find(word) == wordEmbeddings.end()) {
-        std::vector<float> newVector(embeddingDim, 0.1f); // Initialize with small values
-        wordEmbeddings[word] = newVector;
-        std::cout << "New word added to vocabulary: " << word << "\n";
-    }
-}
-
-// Saves embeddings to a file
-void saveEmbeddings(const std::string& outputPath) {
-    std::ofstream file(outputPath);
-    if (!file.is_open()) {
-        throw std::runtime_error("Failed to open file for saving embeddings.");
-    }
-
-    for (const auto& [word, embedding] : wordEmbeddings) {
-        file << word;
-        for (float value : embedding) {
-            file << " " << value;
-        }
+// Save
+void save(const std::string& path) {
+    std::ofstream file(path);
+    if (!file.is_open()) throw std::runtime_error("Failed to save embeddings.");
+    for (const auto& [wrd, vec] : emb) {
+        file << wrd;
+        for (float v : vec) file << " " << v;
         file << "\n";
     }
-
-    std::cout << "Embeddings saved to " << outputPath << ".\n";
 }
 
-// Loads embeddings from a file
-void loadEmbeddings(const std::string& inputPath) {
-    std::ifstream file(inputPath);
-    if (!file.is_open()) {
-        throw std::runtime_error("Failed to open file for loading embeddings.");
-    }
-
-    std::string line;
+// Load
+void load(const std::string& path) {
+    std::ifstream file(path);
+    if (!file.is_open()) throw std::runtime_error("Failed to load embeddings.");
+    std::string line, wrd;
     while (std::getline(file, line)) {
         std::istringstream stream(line);
-        std::string word;
-        stream >> word;
-
-        std::vector<float> embedding;
-        float value;
-        while (stream >> value) {
-            embedding.push_back(value);
-        }
-
-        wordEmbeddings[word] = embedding;
+        stream >> wrd;
+        std::vector<float> vec(dim, 0.0f);
+        for (float& v : vec) stream >> v;
+        emb[wrd] = vec;
     }
-
-    std::cout << "Embeddings loaded from " << inputPath << ".\n";
 }
 
-// Text processing utilities
-namespace {
-std::vector<std::string> tokenize(const std::string& text) {
-    std::istringstream stream(text);
-    std::vector<std::string> tokens;
-    std::string token;
+// Adaptive training
+void trnAdpt(const std::string& path, size_t epochs) {
+    initPrm(path);
+    trn(epochs);
+}
 
-    while (stream >> token) {
-        tokens.push_back(token);
+// Expand dimensions
+void expDim(size_t newDim) {
+    if (newDim > dim) {
+        for (auto& [wrd, vec] : emb) vec.resize(newDim, 0.1f);
+        dim = newDim;
+    }
+}
+
+// Initialize parameters
+void initPrm(const std::string& path) {
+    std::ifstream file(path);
+    if (!file.is_open()) throw std::runtime_error("Failed to open file for params.");
+
+    std::unordered_set<std::string> vocab;
+    size_t totalTokens = 0, totalLines = 0;
+    std::string line;
+
+    while (std::getline(file, line)) {
+        auto tokens = tokenize(stripPunct(toLower(line)));
+        totalTokens += tokens.size();
+        totalLines++;
+        vocab.insert(tokens.begin(), tokens.end());
     }
 
+    size_t vocabSize = vocab.size();
+    float avgLength = static_cast<float>(totalTokens) / totalLines;
+
+    dim = std::min(300, static_cast<int>(std::sqrt(vocabSize * avgLength)));
+    lr = 1.0f / std::sqrt(avgLength);
+    decay = 0.01f / dim;
+}
+
+// Utilities
+namespace {
+std::vector<std::string> tokenize(const std::string& txt) {
+    std::istringstream stream(txt);
+    std::vector<std::string> tokens;
+    std::string tok;
+    while (stream >> tok) tokens.push_back(tok);
     return tokens;
 }
 
-std::string toLowerCase(const std::string& text) {
-    std::string result = text;
-    std::transform(result.begin(), result.end(), result.begin(), [](unsigned char c) {
-        return std::tolower(c);
-    });
-    return result;
+std::string toLower(const std::string& txt) {
+    std::string res = txt;
+    std::transform(res.begin(), res.end(), res.begin(), ::tolower);
+    return res;
 }
 
-std::string stripPunctuation(const std::string& text) {
-    std::string result;
-    std::remove_copy_if(text.begin(), text.end(), std::back_inserter(result), [](unsigned char c) {
-        return std::ispunct(c);
-    });
-    return result;
+std::string stripPunct(const std::string& txt) {
+    std::string res;
+    std::remove_copy_if(txt.begin(), txt.end(), std::back_inserter(res), ::ispunct);
+    return res;
 }
-} // namespace
+}
 
 } // namespace LM
+
 
