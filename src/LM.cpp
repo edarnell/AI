@@ -1,196 +1,200 @@
 #include "LM.h"
 #include <cmath>
+#include <fstream>
 #include <iostream>
-#include <random>
-#include <unordered_map>
-#include <unordered_set>
 #include <sstream>
 #include <stdexcept>
+#include <unordered_map>
+#include <vector>
+#include <algorithm>
+#include <cctype>
 
 namespace LM {
 
+// Internal storage
 namespace {
+std::unordered_map<std::string, std::unordered_map<std::string, float>> cooccurrenceMatrix;
+std::unordered_map<std::string, std::vector<float>> wordEmbeddings;
+size_t embeddingDim = 50;
+float learningRate = 0.01f;
+float decayRate = 0.001f;
 
-// Internal model parameters
-size_t inputSize, hiddenSize, outputSize;
-std::vector<std::vector<float>> weightsInputHidden;
-std::vector<std::vector<float>> weightsHiddenOutput;
-std::vector<float> biasHidden;
-std::vector<float> biasOutput;
-
-// Internal data
-std::vector<std::vector<float>> trainingData;
-std::vector<size_t> trainingLabels;
-std::unordered_set<std::string> vocabulary;
-std::unordered_map<std::string, std::vector<float>> userPreferences;
-
-// Activation functions
-float sigmoid(float x) { return 1.0f / (1.0f + std::exp(-x)); }
-float sigmoidDerivative(float x) { return x * (1.0f - x); }
-
-// Random initialization for weights
-float randomWeight() {
-    static std::mt19937 rng(std::random_device{}());
-    static std::uniform_real_distribution<float> dist(-0.1f, 0.1f);
-    return dist(rng);
+// Utility functions
+std::vector<std::string> tokenize(const std::string& text);
+std::string toLowerCase(const std::string& text);
+std::string stripPunctuation(const std::string& text);
 }
 
-// Initializes weights and biases
-void initializeWeights() {
-    weightsInputHidden.assign(inputSize, std::vector<float>(hiddenSize, randomWeight()));
-    weightsHiddenOutput.assign(hiddenSize, std::vector<float>(outputSize, randomWeight()));
-    biasHidden.assign(hiddenSize, randomWeight());
-    biasOutput.assign(outputSize, randomWeight());
+// Initializes embeddings and clears the co-occurrence matrix
+void initialize(size_t dim) {
+    embeddingDim = dim;
+    cooccurrenceMatrix.clear();
+    wordEmbeddings.clear();
 }
 
-// Computes hidden layer activations
-std::vector<float> computeHiddenLayer(const std::vector<float>& input) {
-    std::vector<float> hidden(hiddenSize, 0.0f);
-    for (size_t i = 0; i < hiddenSize; ++i) {
-        for (size_t j = 0; j < inputSize; ++j) {
-            hidden[i] += input[j] * weightsInputHidden[j][i];
-        }
-        hidden[i] += biasHidden[i];
-        hidden[i] = sigmoid(hidden[i]);
+// Builds co-occurrence matrix from a dataset
+void buildCooccurrenceMatrix(const std::string& datasetPath, size_t windowSize) {
+    std::ifstream file(datasetPath);
+    if (!file.is_open()) {
+        throw std::runtime_error("Failed to open dataset file.");
     }
-    return hidden;
-}
 
-// Computes output layer activations
-std::vector<float> computeOutputLayer(const std::vector<float>& hidden) {
-    std::vector<float> output(outputSize, 0.0f);
-    for (size_t i = 0; i < outputSize; ++i) {
-        for (size_t j = 0; j < hiddenSize; ++j) {
-            output[i] += hidden[j] * weightsHiddenOutput[j][i];
-        }
-        output[i] += biasOutput[i];
-        output[i] = sigmoid(output[i]);
-    }
-    return output;
-}
+    std::string line;
+    while (std::getline(file, line)) {
+        auto tokens = tokenize(stripPunctuation(toLowerCase(line)));
 
-// Updates weights using Hebbian learning
-void updateWeightsHebbian(const std::vector<float>& input, const std::vector<float>& hidden) {
-    for (size_t i = 0; i < inputSize; ++i) {
-        for (size_t j = 0; j < hiddenSize; ++j) {
-            weightsInputHidden[i][j] += 0.01f * input[i] * hidden[j];
+        for (size_t i = 0; i < tokens.size(); ++i) {
+            for (size_t j = std::max(0, static_cast<int>(i) - static_cast<int>(windowSize));
+                 j < std::min(tokens.size(), i + windowSize + 1);
+                 ++j) {
+                if (i != j) {
+                    cooccurrenceMatrix[tokens[i]][tokens[j]] += 1.0f;
+                }
+            }
         }
     }
+
+    std::cout << "Co-occurrence matrix built successfully.\n";
 }
 
-// Applies global optimization (evolutionary strategy)
-void optimizeWeightsEvolutionary() {
-    for (auto& row : weightsInputHidden) {
-        for (auto& weight : row) {
-            weight += randomWeight() * 0.01f;
-        }
+// Hebbian-inspired weight update
+void updateHebbianWeights(const std::string& word, const std::string& contextWord, float coOccurrence) {
+    auto& wordVec = wordEmbeddings[word];
+    auto& contextVec = wordEmbeddings[contextWord];
+
+    for (size_t i = 0; i < embeddingDim; ++i) {
+        // Hebbian learning: Reinforce similarity
+        wordVec[i] += learningRate * coOccurrence * contextVec[i];
+        contextVec[i] += learningRate * coOccurrence * wordVec[i];
+
+        // Apply decay to prevent runaway reinforcement
+        wordVec[i] *= (1.0f - decayRate);
+        contextVec[i] *= (1.0f - decayRate);
     }
-    for (auto& row : weightsHiddenOutput) {
-        for (auto& weight : row) {
-            weight += randomWeight() * 0.01f;
-        }
-    }
 }
 
-} // namespace
-
-void initialize(size_t inSize, size_t hidSize, size_t outSize) {
-    inputSize = inSize;
-    hiddenSize = hidSize;
-    outputSize = outSize;
-    initializeWeights();
-}
-
-void addTrainingSample(const std::vector<float>& input, size_t labelIndex) {
-    if (input.size() != inputSize) {
-        throw std::invalid_argument("Input size does not match model input size.");
-    }
-    trainingData.push_back(input);
-    trainingLabels.push_back(labelIndex);
-}
-
-void train(const std::vector<std::vector<float>>& data, const std::vector<size_t>& labels, size_t epochs) {
+// Trains embeddings using Hebbian updates
+void trainHebbianEmbeddings(size_t epochs) {
     for (size_t epoch = 0; epoch < epochs; ++epoch) {
-        for (size_t sample = 0; sample < data.size(); ++sample) {
-            const auto& input = data[sample];
-            auto hidden = computeHiddenLayer(input);
-            updateWeightsHebbian(input, hidden);
-
-            if (epoch % 10 == 0) {
-                optimizeWeightsEvolutionary();
+        for (const auto& [word, coOccurrences] : cooccurrenceMatrix) {
+            for (const auto& [contextWord, count] : coOccurrences) {
+                if (wordEmbeddings.find(contextWord) != wordEmbeddings.end()) {
+                    updateHebbianWeights(word, contextWord, log(1 + count));
+                }
             }
         }
         std::cout << "Epoch " << epoch + 1 << "/" << epochs << " completed.\n";
     }
 }
 
-void updateModel(const std::vector<float>& input, size_t labelIndex) {
-    addTrainingSample(input, labelIndex);
-    auto hidden = computeHiddenLayer(input);
-    updateWeightsHebbian(input, hidden);
-    optimizeWeightsEvolutionary();
-}
-
-void updateVocabulary(const std::string& text) {
-    std::istringstream stream(text);
-    std::string word;
-    while (stream >> word) {
-        if (vocabulary.insert(word).second) {
-            std::cout << "New word added to vocabulary: " << word << "\n";
+// Normalizes embeddings to maintain consistency
+void normalizeEmbeddings() {
+    for (auto& [word, vector] : wordEmbeddings) {
+        float magnitude = 0.0f;
+        for (float val : vector) {
+            magnitude += val * val;
         }
-    }
-}
+        magnitude = std::sqrt(magnitude);
 
-void integrateFeedback(const std::string& feedback, const std::vector<float>& input) {
-    if (feedback.find("great") != std::string::npos) {
-        auto hidden = computeHiddenLayer(input);
-        updateWeightsHebbian(input, hidden);
-    } else if (feedback.find("error") != std::string::npos) {
-        auto hidden = computeHiddenLayer(input);
-        for (size_t i = 0; i < inputSize; ++i) {
-            for (size_t j = 0; j < hiddenSize; ++j) {
-                weightsInputHidden[i][j] -= 0.01f * input[i] * hidden[j];
+        if (magnitude > 0) {
+            for (float& val : vector) {
+                val /= magnitude;
             }
         }
     }
+    std::cout << "Embeddings normalized.\n";
 }
 
-std::vector<float> infer(const std::vector<float>& input) {
-    auto hidden = computeHiddenLayer(input);
-    return computeOutputLayer(hidden);
+// Retrieves the embedding for a specific word
+std::vector<float> getEmbedding(const std::string& word) {
+    if (wordEmbeddings.find(word) != wordEmbeddings.end()) {
+        return wordEmbeddings[word];
+    }
+    return std::vector<float>(embeddingDim, 0.0f); // Return zero vector if word is unknown
 }
 
-std::unordered_map<std::string, std::string> classify(const std::vector<float>& input) {
-    auto probabilities = infer(input);
-    size_t maxIndex = std::distance(probabilities.begin(), std::max_element(probabilities.begin(), probabilities.end()));
+// Adds a new word to the vocabulary
+void addNewWord(const std::string& word) {
+    if (wordEmbeddings.find(word) == wordEmbeddings.end()) {
+        std::vector<float> newVector(embeddingDim, 0.1f); // Initialize with small values
+        wordEmbeddings[word] = newVector;
+        std::cout << "New word added to vocabulary: " << word << "\n";
+    }
+}
 
-    std::unordered_map<std::string, std::string> result;
-    result["polarity"] = (maxIndex == 0 ? "negative" : (maxIndex == 1 ? "neutral" : "positive"));
-    result["intensity"] = (probabilities[maxIndex] > 0.7 ? "high" : (probabilities[maxIndex] > 0.4 ? "medium" : "low"));
+// Saves embeddings to a file
+void saveEmbeddings(const std::string& outputPath) {
+    std::ofstream file(outputPath);
+    if (!file.is_open()) {
+        throw std::runtime_error("Failed to open file for saving embeddings.");
+    }
+
+    for (const auto& [word, embedding] : wordEmbeddings) {
+        file << word;
+        for (float value : embedding) {
+            file << " " << value;
+        }
+        file << "\n";
+    }
+
+    std::cout << "Embeddings saved to " << outputPath << ".\n";
+}
+
+// Loads embeddings from a file
+void loadEmbeddings(const std::string& inputPath) {
+    std::ifstream file(inputPath);
+    if (!file.is_open()) {
+        throw std::runtime_error("Failed to open file for loading embeddings.");
+    }
+
+    std::string line;
+    while (std::getline(file, line)) {
+        std::istringstream stream(line);
+        std::string word;
+        stream >> word;
+
+        std::vector<float> embedding;
+        float value;
+        while (stream >> value) {
+            embedding.push_back(value);
+        }
+
+        wordEmbeddings[word] = embedding;
+    }
+
+    std::cout << "Embeddings loaded from " << inputPath << ".\n";
+}
+
+// Text processing utilities
+namespace {
+std::vector<std::string> tokenize(const std::string& text) {
+    std::istringstream stream(text);
+    std::vector<std::string> tokens;
+    std::string token;
+
+    while (stream >> token) {
+        tokens.push_back(token);
+    }
+
+    return tokens;
+}
+
+std::string toLowerCase(const std::string& text) {
+    std::string result = text;
+    std::transform(result.begin(), result.end(), result.begin(), [](unsigned char c) {
+        return std::tolower(c);
+    });
     return result;
 }
 
-void updateUserPreferences(const std::string& userId, const std::vector<float>& preferences) {
-    userPreferences[userId] = preferences;
+std::string stripPunctuation(const std::string& text) {
+    std::string result;
+    std::remove_copy_if(text.begin(), text.end(), std::back_inserter(result), [](unsigned char c) {
+        return std::ispunct(c);
+    });
+    return result;
 }
-
-std::vector<float> personalizeInference(const std::vector<float>& input, const std::string& userId) {
-    auto output = infer(input);
-    if (userPreferences.find(userId) != userPreferences.end()) {
-        auto& preferences = userPreferences[userId];
-        for (size_t i = 0; i < output.size(); ++i) {
-            output[i] += preferences[i];
-        }
-    }
-    return output;
-}
-
-std::vector<float> preprocessText(const std::string& text) {
-    std::vector<float> vectorized(inputSize, 0.0f);
-    for (size_t i = 0; i < text.size() && i < inputSize; ++i) {
-        vectorized[i] = static_cast<float>(text[i]) / 255.0f;
-    }
-    return vectorized;
-}
+} // namespace
 
 } // namespace LM
+

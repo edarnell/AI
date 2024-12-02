@@ -2,43 +2,43 @@
 #define LM_H
 
 #include <string>
-#include <vector>
 #include <unordered_map>
+#include <vector>
 
 namespace LM {
 
-// Initializes the language model with specific dimensions
-void initialize(size_t inputSize, size_t hiddenSize, size_t outputSize);
+// Initializes embeddings and co-occurrence matrix
+void initialize(size_t embeddingDim);
 
-// Adds a training sample for incremental updates
-void addTrainingSample(const std::vector<float>& input, size_t labelIndex);
+// Builds co-occurrence matrix from a dataset
+void buildCooccurrenceMatrix(const std::string& datasetPath, size_t windowSize);
 
-// Trains the model on all accumulated data
-void train(const std::vector<std::vector<float>>& data, const std::vector<size_t>& labels, size_t epochs);
+// Trains embeddings using Hebbian-inspired updates
+void trainHebbianEmbeddings(size_t epochs);
 
-// Dynamically updates the model with a single sample
-void updateModel(const std::vector<float>& input, size_t labelIndex);
+// Normalizes embeddings to maintain consistency
+void normalizeEmbeddings();
 
-// Expands vocabulary by adding new words dynamically
-void updateVocabulary(const std::string& text);
+// Retrieves the embedding for a specific word
+std::vector<float> getEmbedding(const std::string& word);
 
-// Integrates user feedback for refining the model
-void integrateFeedback(const std::string& feedback, const std::vector<float>& input);
+// Adds a new word to the vocabulary
+void addNewWord(const std::string& word);
 
-// Runs inference and returns probabilities for each output class
-std::vector<float> infer(const std::vector<float>& input);
+// Saves embeddings to a file
+void saveEmbeddings(const std::string& outputPath);
 
-// Maps probabilities to human-readable classifications
-std::unordered_map<std::string, std::string> classify(const std::vector<float>& input);
+// Loads embeddings from a file
+void loadEmbeddings(const std::string& inputPath);
 
-// Updates user-specific preferences based on interactions
-void updateUserPreferences(const std::string& userId, const std::vector<float>& preferences);
+// Adaptive training with dynamically adjusted parameters
+void trainWithAdaptiveParameters(const std::string& datasetPath, size_t epochs);
 
-// Generates personalized inference based on user-specific preferences
-std::vector<float> personalizeInference(const std::vector<float>& input, const std::string& userId);
+// Expands embedding dimensions dynamically
+void expandEmbeddingDimensions(size_t newDim);
 
-// Preprocesses text into vectorized representation
-std::vector<float> preprocessText(const std::string& text);
+// Dynamically initializes parameters based on dataset properties
+void initializeDynamicParameters(const std::string& datasetPath);
 
 } // namespace LM
 
