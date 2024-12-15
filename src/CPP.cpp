@@ -1,106 +1,165 @@
+
 #include "CPP.h"
 #include <cctype>
-#include <algorithm>
+#include <unordered_set>
+#include <sstream>
 #include <iostream>
 
-/**
- * Constructor for the CPP class. Initializes the parser.
- */
+// Constructor
 CPP::CPP() {}
 
-/**
- * Tokenizes the source code into a sequence of meaningful tokens.
- * @param code The C++ source code to tokenize.
- * @return A vector of tokens.
- */
+// Tokenize source code
 std::vector<CPP::Tkn> CPP::Tknz(const std::string& code) {
     std::vector<Tkn> tkns;
-    std::string cur;
+    std::ostringstream cur;
 
-    for (size_t i = 0; i < code.size(); ++i) {
-        char c = code[i];
+    for (char c : code) {
         if (std::isspace(c)) {
-            if (!cur.empty()) {
-                tkns.push_back(Classify(cur));
+            if (!cur.str().empty()) {
+                tkns.push_back(Classify(cur.str()));
+                cur.str("");
                 cur.clear();
             }
         } else if (std::ispunct(c) && c != '_') {
-            if (!cur.empty()) {
-                tkns.push_back(Classify(cur));
+            if (!cur.str().empty()) {
+                tkns.push_back(Classify(cur.str()));
+                cur.str("");
                 cur.clear();
             }
             tkns.push_back({Tkn::Sym, std::string(1, c)});
         } else {
-            cur += c;
+            cur << c;
         }
     }
 
-    if (!cur.empty()) {
-        tkns.push_back(Classify(cur));
+    if (!cur.str().empty()) {
+        tkns.push_back(Classify(cur.str()));
     }
 
     return tkns;
 }
 
-/**
- * Classifies a string into a specific token type.
- * @param tkn The string to classify.
- * @return The classified token.
- */
+// Classify tokens
 CPP::Tkn CPP::Classify(const std::string& tkn) {
-    static const std::vector<std::string> kws = {
+    static const std::unordered_set<std::string> kws = {
         "int", "float", "double", "char", "if", "else", "for", "while", "return",
         "void", "class", "struct", "enum", "template", "namespace", "constexpr",
         "concept", "co_yield", "co_return", "co_await", "inline", "virtual",
-        "override", "final", "constexpr", "export", "module"
+        "override", "final", "export", "module", "auto", "static", "public",
+        "protected", "private"
     };
 
-    if (std::find(kws.begin(), kws.end(), tkn) != kws.end()) {
-        return {Tkn::Kw, tkn};
-    } else if (std::isdigit(tkn[0])) {
-        return {Tkn::Lit, tkn};
-    } else {
-        return {Tkn::Id, tkn};
-    }
+    if (kws.count(tkn)) return {Tkn::Kw, tkn};
+    if (std::isdigit(tkn[0])) return {Tkn::Lit, tkn};
+    return {Tkn::Id, tkn};
 }
 
-/**
- * Parses the provided C++ source code into a structured tree of nodes.
- * @param code The C++ source code to parse.
- * @return The root node of the parsed structure.
- */
-CPP::Nd CPP::Prs(const std::string& code) {
-    auto t = Tknz(code);
-    Nd root = {"root", "", ""};
-
-    for (size_t i = 0; i < t.size(); ++i) {
-        if (t[i].type == Tkn::Kw) {
-            if (t[i].val == "class") {
-                root.ch.push_back(Cls(t, i));
-            } else if (t[i].val == "struct") {
-                root.ch.push_back(Strct(t, i));
-            } else if (t[i].val == "enum") {
-                root.ch.push_back(Enm(t, i));
-            } else if (t[i].val == "template") {
-                root.ch.push_back(Tmplt(t, i));
-            } else if (t[i].val == "constexpr") {
-                root.ch.push_back(Cxpr(t, i));
-            } else if (t[i].val == "concept") {
-                root.ch.push_back(Cpt(t, i));
-            } else if (t[i].val == "namespace") {
-                root.ch.push_back(Nsp(t, i));
-            } else if (t[i].val == "module") {
-                root.ch.push_back({"module", t[i + 1].val, ""});
-                i++;
+// Parse class construct
+CPP::Nd CPP::Cls(const std::vector<Tkn>& tkns, size_t& index) {
+    Nd node = {"class", tkns[index + 1].val, ""};
+    index += 2; // Skip "class" and its name
+    if (tkns[index].val == "{") {
+        size_t closeIdx = FindClose(tkns, index, '{', '}');
+        for (size_t i = index + 1; i < closeIdx; ++i) {
+            if (tkns[i].type == Tkn::Kw && tkns[i].val == "void") {
+                node.ch.push_back(Func(tkns, i));
             }
-        } else if (t[i].val[0] == '#') {
-            root.ch.push_back(Mcr(t, i));
         }
+        index = closeIdx;
     }
-
-    return root;
+    return node;
 }
 
-// Implement remaining parsing methods (Cls, Strct, etc.) similarly.
+// Parse struct construct
+CPP::Nd CPP::Strct(const std::vector<Tkn>& tkns, size_t& index) {
+    Nd node = {"struct", tkns[index + 1].val, ""};
+    index += 2;
+    if (tkns[index].val == "{") {
+        size_t closeIdx = FindClose(tkns, index, '{', '}');
+        for (size_t i = index + 1; i < closeIdx; ++i) {
+            if (tkns[i].type == Tkn::Kw && tkns[i].val == "int") {
+                node.ch.push_back({"var", tkns[i + 1].val, "int"});
+                ++i;
+            }
+        }
+        index = closeIdx;
+    }
+    return node;
+}
+
+// Parse function construct
+CPP::Nd CPP::Func(const std::vector<Tkn>& tkns, size_t& index) {
+    Nd node = {"func", tkns[index + 1].val, tkns[index].val};
+    index += 2;
+    if (tkns[index].val == "(") {
+        size_t closeIdx = FindClose(tkns, index, '(', ')');
+        index = closeIdx;
+    }
+    return node;
+}
+
+// Parse enum construct
+CPP::Nd CPP::Enm(const std::vector<Tkn>& tkns, size_t& index) {
+    Nd node = {"enum", tkns[index + 1].val, ""};
+    index += 2;
+    if (tkns[index].val == "{") {
+        size_t closeIdx = FindClose(tkns, index, '{', '}');
+        for (size_t i = index + 1; i < closeIdx; ++i) {
+            if (tkns[i].type == Tkn::Id) {
+                node.ch.push_back({"value", tkns[i].val, ""});
+            }
+        }
+        index = closeIdx;
+    }
+    return node;
+}
+
+// Parse template construct
+CPP::Nd CPP::Tmplt(const std::vector<Tkn>& tkns, size_t& index) {
+    Nd node = {"template", "", ""};
+    index += 1;
+    if (tkns[index].val == "<") {
+        size_t closeIdx = FindClose(tkns, index, '<', '>');
+        node.val = tkns[index + 1].val; // Assume a single type parameter
+        index = closeIdx;
+    }
+    return node;
+}
+
+// Parse namespace construct
+CPP::Nd CPP::Nsp(const std::vector<Tkn>& tkns, size_t& index) {
+    Nd node = {"namespace", tkns[index + 1].val, ""};
+    index += 2;
+    if (tkns[index].val == "{") {
+        size_t closeIdx = FindClose(tkns, index, '{', '}');
+        index = closeIdx;
+    }
+    return node;
+}
+
+// Parse macro construct
+CPP::Nd CPP::Mcr(const std::vector<Tkn>& tkns, size_t& index) {
+    Nd node = {"macro", tkns[index].val, ""};
+    ++index;
+    return node;
+}
+
+// Parse coroutine construct
+CPP::Nd CPP::Co(const std::vector<Tkn>& tkns, size_t& index) {
+    Nd node = {"coroutine", tkns[index + 1].val, ""};
+    index += 2;
+    return node;
+}
+
+// Find closing bracket
+size_t CPP::FindClose(const std::vector<Tkn>& tkns, size_t start, char open, char close) {
+    int depth = 0;
+    for (size_t i = start; i < tkns.size(); ++i) {
+        if (tkns[i].val[0] == open) depth++;
+        if (tkns[i].val[0] == close) depth--;
+        if (depth == 0) return i;
+    }
+    throw std::runtime_error("Mismatched brackets detected.");
+}
 
 

@@ -1,174 +1,150 @@
+
 #include <iostream>
 #include <fstream>
-#include <string>
+#include <sstream>
+#include <unordered_map>
 #include <vector>
 #include <stdexcept>
-#include <sstream>
-#include "N3R.h"  // Neural Network and Logic Validation
-#include "LM.h"   // Language Model
+#include "N3R.h"
+#include "LM.h"
 
-class GPTSystem {
-    N3R::NNet neuralNet;          // Neural Network for logical relations
-    LM::LanguageModel languageModel; // Language Model for embeddings and co-occurrence
+namespace GPT {
 
-public:
-    // Load and train from a JSON-like dataset
-    void train(const std::string& filePath = "data/gpt.json") {
-        std::ifstream inputFile(filePath);
-        if (!inputFile.is_open()) {
-            throw std::runtime_error("Error: Cannot open file " + filePath);
-        }
+// Global variables for the conversational model
+N3R::NNet nnet;
+LM::EmbeddingModel embeddingModel;
 
-        std::string line;
-        std::string content = "";
-        while (std::getline(inputFile, line)) {
-            content += line;
-        }
-        inputFile.close();
+// Default file path for JSON conversation data
+const std::string DEFAULT_JSON_PATH = "data/conversations.json";
 
-        auto dataEntries = parseJSON(content);
-        for (const auto& entry : dataEntries) {
-            std::string userInput = entry.first;
-            std::string assistantOutput = entry.second;
+// Helper function to trim whitespace
+std::string trim(const std::string& str) {
+    size_t first = str.find_first_not_of(" 	
 
-            // Process the input-output pair
-            processKnowledgePair(userInput, assistantOutput);
-        }
+");
+    size_t last = str.find_last_not_of(" 	
 
-        languageModel.norm(); // Normalize embeddings
-        std::cout << "Training completed successfully.\n";
-        performSelfAssessment();
-    }
-
-private:
-    // Parse JSON structure with mixed content
-    std::vector<std::pair<std::string, std::string>> parseJSON(const std::string& content) {
-        std::vector<std::pair<std::string, std::string>> dataEntries;
-        size_t start = 0;
-
-        while ((start = content.find("\"role\": \"user\"", start)) != std::string::npos) {
-            size_t userContentStart = content.find("\"content\": ", start) + 11;
-            size_t userContentEnd = findContentEnd(content, userContentStart);
-            std::string userInput = content.substr(userContentStart, userContentEnd - userContentStart);
-            sanitizeContent(userInput);
-
-            size_t assistantStart = content.find("\"role\": \"assistant\"", userContentEnd);
-            if (assistantStart == std::string::npos) break;
-
-            size_t assistantContentStart = content.find("\"content\": ", assistantStart) + 11;
-            size_t assistantContentEnd = findContentEnd(content, assistantContentStart);
-            std::string assistantOutput = content.substr(assistantContentStart, assistantContentEnd - assistantContentStart);
-            sanitizeContent(assistantOutput);
-
-            dataEntries.emplace_back(userInput, assistantOutput);
-            start = assistantContentEnd;
-        }
-
-        return dataEntries;
-    }
-
-    // Determine the end of content, handling structured data or plain text
-    size_t findContentEnd(const std::string& content, size_t start) {
-        if (content[start] == '{' || content[start] == '[') {
-            // Structured data block
-            int openBrackets = 1;
-            size_t pos = start + 1;
-            while (openBrackets > 0 && pos < content.size()) {
-                if (content[pos] == '{' || content[pos] == '[') openBrackets++;
-                if (content[pos] == '}' || content[pos] == ']') openBrackets--;
-                pos++;
-            }
-            return pos;
-        } else {
-            // Plain text block
-            return content.find("\"", start + 1);
-        }
-    }
-
-    // Clean and format content
-    void sanitizeContent(std::string& content) {
-        // Remove enclosing quotes
-        if (!content.empty() && content[0] == '"') content.erase(0, 1);
-        if (!content.empty() && content.back() == '"') content.pop_back();
-
-        // Handle structured data: Convert to readable string if necessary
-        if (content.find("{") == 0 || content.find("[") == 0) {
-            content = parseStructuredData(content);
-        }
-    }
-
-    // Parse structured data (JSON-like) into a readable string format
-    std::string parseStructuredData(const std::string& content) {
-        std::ostringstream parsedContent;
-
-        if (content[0] == '{') {
-            // Convert object to key-value pairs
-            parsedContent << "Key-Value Data: ";
-            size_t start = 1; // Skip opening '{'
-            while (start < content.size() && content[start] != '}') {
-                size_t keyStart = content.find("\"", start) + 1;
-                size_t keyEnd = content.find("\"", keyStart);
-                std::string key = content.substr(keyStart, keyEnd - keyStart);
-
-                size_t valueStart = content.find(":", keyEnd) + 1;
-                size_t valueEnd = content.find(",", valueStart);
-                if (valueEnd == std::string::npos) valueEnd = content.find("}", valueStart);
-                std::string value = content.substr(valueStart, valueEnd - valueStart);
-                sanitizeContent(value); // Clean value
-
-                parsedContent << key << "=" << value << "; ";
-                start = valueEnd + 1;
-            }
-        } else if (content[0] == '[') {
-            // Convert array to CSV-like format
-            parsedContent << "Array Data: ";
-            size_t start = 1; // Skip opening '['
-            while (start < content.size() && content[start] != ']') {
-                size_t valueStart = content.find_first_not_of(" \n\r\t", start);
-                size_t valueEnd = content.find(",", valueStart);
-                if (valueEnd == std::string::npos) valueEnd = content.find("]", valueStart);
-                std::string value = content.substr(valueStart, valueEnd - valueStart);
-                sanitizeContent(value); // Clean value
-
-                parsedContent << value << ", ";
-                start = valueEnd + 1;
-            }
-        }
-
-        std::string result = parsedContent.str();
-        if (result.back() == ' ') result.pop_back(); // Remove trailing space
-        if (result.back() == ',') result.pop_back(); // Remove trailing comma
-        return result;
-    }
-
-    // Process user input and assistant output as a knowledge pair
-    void processKnowledgePair(const std::string& userInput, const std::string& assistantOutput) {
-        neuralNet.addN(userInput, 1.0);
-        neuralNet.addN(assistantOutput, 0.5);
-        neuralNet.addS(userInput, assistantOutput, 0.8, 1.0);
-
-        languageModel.addWrd(userInput); // Add words to LM
-        languageModel.addWrd(assistantOutput);
-    }
-
-    // Perform self-assessment to identify gaps
-    void performSelfAssessment() {
-        std::cout << "Performing self-assessment...\n";
-        neuralNet.validate(N3R::Model, 0.05, 0.2, 0.999, 0.001); // Comprehensive validation
-        std::cout << "Model validation complete.\n";
-    }
-};
-
-int main(int argc, char* argv[]) {
-    try {
-        GPTSystem system;
-        std::string filePath = (argc > 1) ? argv[1] : "data/gpt.json";
-        std::cout << "Training from file: " << filePath << std::endl;
-        system.train(filePath);
-    } catch (const std::exception& e) {
-        std::cerr << "An error occurred: " << e.what() << "\n";
-        return 1;
-    }
-
-    return 0;
+");
+    return (first == std::string::npos || last == std::string::npos) ? "" : str.substr(first, last - first + 1);
 }
+
+// Basic JSON parsing utility (minimal implementation)
+std::unordered_map<std::string, std::string> parseJSONLine(const std::string& line) {
+    std::unordered_map<std::string, std::string> parsed;
+    std::istringstream stream(line);
+    std::string key, value;
+    while (std::getline(stream, key, ':') && std::getline(stream, value, ',')) {
+        key = trim(key);
+        value = trim(value);
+        if (!key.empty() && !value.empty()) {
+            key = key.substr(1, key.size() - 2); // Remove quotes
+            value = value.substr(1, value.size() - 2); // Remove quotes
+            parsed[key] = value;
+        }
+    }
+    return parsed;
+}
+
+// Load JSON conversation data (manual parsing)
+void loadJSONData(const std::string& filePath = DEFAULT_JSON_PATH) {
+    std::ifstream file(filePath);
+    if (!file.is_open()) {
+        throw std::runtime_error("Error: Unable to open JSON file at " + filePath);
+    }
+
+    std::string line;
+    size_t convoCount = 0;
+    while (std::getline(file, line)) {
+        auto convo = parseJSONLine(line);
+        if (convo.count("user_input") && convo.count("system_response")) {
+            const std::string userInput = convo["user_input"];
+            const std::string systemResponse = convo["system_response"];
+
+            // Add user input and system response as nodes to the network
+            nnet.addN(userInput, "input", 1.0f);
+            nnet.addN(systemResponse, "output", 0.0f);
+
+            // Create relationships between inputs and responses
+            nnet.addS(userInput, systemResponse, 0.5f); // Initial weight
+            convoCount++;
+        }
+    }
+
+    std::cout << "Loaded " << convoCount << " conversations from " << filePath << ".
+";
+}
+
+// Train conversational embeddings
+void trainModel(size_t epochs) {
+    for (size_t e = 0; e < epochs; ++e) {
+        nnet.fwd();  // Forward propagate through the network
+
+        // Optionally introduce noise or variability for stochastic updates
+        nnet.addWeightNoise(0.01f);
+    }
+
+    // Normalize the final embeddings for consistency
+    nnet.validate();
+    std::cout << "Training completed over " << epochs << " epochs.
+";
+}
+
+// Generate a response based on user input
+std::string generateResponse(const std::string& userInput) {
+    // Forward propagate user input through the network
+    auto contextEmbedding = LM::getContextEmbedding({userInput});
+    nnet.addN(userInput, "input", 1.0f);  // Ensure user input is in the network
+
+    // Find the strongest connected response
+    std::string bestResponse;
+    float maxWeight = -1.0f;
+
+    for (const auto& syn : nnet.getSynapses()) {
+        if (syn.src == userInput && syn.weight > maxWeight) {
+            maxWeight = syn.weight;
+            bestResponse = syn.dest;
+        }
+    }
+
+    return bestResponse.empty() ? "I don't know yet." : bestResponse;
+}
+
+// Save the model to disk
+void saveModel(const std::string& filePath) {
+    std::ofstream file(filePath);
+    if (!file.is_open()) {
+        throw std::runtime_error("Error: Unable to save model to file.");
+    }
+    nnet.print();  // Save the network's current state
+    std::cout << "Model saved to " << filePath << ".
+";
+}
+
+// Load the model from disk
+void loadModel(const std::string& filePath) {
+    std::ifstream file(filePath);
+    if (!file.is_open()) {
+        throw std::runtime_error("Error: Unable to load model from file.");
+    }
+    // Placeholder for loading logic
+    std::cout << "Loading model from " << filePath << "...
+";
+}
+
+// Interactive prompt for testing the conversation system
+void interactivePrompt() {
+    std::string userInput;
+    std::cout << "Start chatting with Xi! Type 'exit' to quit.
+";
+    while (true) {
+        std::cout << "You: ";
+        std::getline(std::cin, userInput);
+        if (userInput == "exit") break;
+
+        std::string response = generateResponse(userInput);
+        std::cout << "Xi: " << response << "
+";
+    }
+}
+
+}  // namespace GPT

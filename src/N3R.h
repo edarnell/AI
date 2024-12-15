@@ -4,55 +4,107 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include <utility>
+#include <iostream>
 
 namespace N3R {
 
-enum VM { Node, Synapse, Model }; // Validation Modes: Node, Synapse, or Model
-
-struct N {
-    std::string n; // Node ID
-    double w;      // Weight
+/**
+ * @brief Represents a node in the network.
+ */
+struct Node {
+    std::string id;  // Unique identifier
+    std::string type; // Type: "input", "hidden", or "output"
+    float value;     // Current value
 };
 
-class S3R {
-public:
-    double w;   // Synaptic weight
-    double d;   // Synaptic distance
-    double f;   // Synaptic force
-    std::string s;  // Source node ID
-    std::string t;  // Target node ID
-
-    S3R(const std::string& s, const std::string& t, double w = 0.0, double d = 0.0, double f = 0.0);
-
-    void upd(const N& sn, const N& tn, double fb); // Update weights
-    std::pair<double, double> eval() const;       // Returns {confidence, uncertainty}
-    void dbg() const;                             // Debug synapse state
+/**
+ * @brief Represents a synapse (connection) in the network.
+ */
+struct Synapse {
+    std::string src;  // Source node ID
+    std::string dest; // Destination node ID
+    float weight;     // Synaptic weight
 };
 
+/**
+ * @brief Represents the neural network.
+ */
 class NNet {
-public:
-    NNet();
-
-    void addN(const std::string& n, double w); 
-    void addS(const std::string& s, const std::string& t, double w, double d); 
-    void fwd(double I, int n); 
-    void validate(VM mode, double confThr = 0.05, double lowXThr = 0.2, double weightThr = 0.999, double distThr = 0.001) const; 
-
 private:
-    std::unordered_map<std::string, N> ns; // Nodes
-    std::vector<S3R> ss;                   // Synapses
+    std::unordered_map<std::string, Node> nodes; // Nodes in the network
+    std::vector<Synapse> synapses;              // Synapses in the network
 
-    // Validation helpers
-    void validateNode(const N& node) const;                             // Validate individual node
-    void validateSynapse(const S3R& syn, double confThr, double lowXThr, double weightThr, double distThr) const; // Validate individual synapse
-    void validateModel(double confThr, double lowXThr, double weightThr, double distThr) const; // Validate entire model
-    double calcThr(const S3R& syn, double confThr) const;               // Calculate dynamic threshold
-    bool isConnected() const;                        // Check if the network is fully connected
-    void dfs(const std::string& id, std::unordered_map<std::string, bool>& visited) const; // DFS for connectivity
-    bool hasCycle() const;                           // Check for cyclic dependencies
-    bool hasCycleUtil(const std::string& id, std::unordered_map<std::string, bool>& visited, std::unordered_map<std::string, bool>& stack) const; // Cycle helper
-    double calculateAverageWeight() const;           // Compute average synapse weight
+    /**
+     * @brief Validate the nodes in the network.
+     */
+    void validateNodes() const;
+
+    /**
+     * @brief Validate the synapses in the network.
+     */
+    void validateSynapses() const;
+
+    /**
+     * @brief Check for cycles in the network using depth-first search.
+     * @param nodeId The current node ID being checked.
+     * @param visited Map tracking visited nodes.
+     * @param stack Map tracking the recursion stack.
+     * @return True if a cycle is detected, otherwise false.
+     */
+    bool dfsCycleCheck(const std::string& nodeId,
+                       std::unordered_map<std::string, bool>& visited,
+                       std::unordered_map<std::string, bool>& stack) const;
+
+    /**
+     * @brief Check for cycles in the network.
+     */
+    void checkCycles() const;
+
+public:
+    /**
+     * @brief Add a node to the network.
+     * @param id Unique identifier for the node.
+     * @param type Node type: "input", "hidden", or "output".
+     * @param value Initial value for the node.
+     */
+    void addN(const std::string& id, const std::string& type, float value);
+
+    /**
+     * @brief Add a synapse to the network.
+     * @param src Source node ID.
+     * @param dest Destination node ID.
+     * @param weight Initial weight of the synapse.
+     */
+    void addS(const std::string& src, const std::string& dest, float weight);
+
+    /**
+     * @brief Perform forward propagation through the network.
+     */
+    void fwd();
+
+    /**
+     * @brief Validate the network structure.
+     * Ensures nodes and synapses are valid and checks for cycles.
+     */
+    void validate();
+
+    /**
+     * @brief Calculate the average weight of all synapses in the network.
+     * @return The average synaptic weight.
+     */
+    float avgWeight() const;
+
+    /**
+     * @brief Add noise to synaptic weights to introduce stochastic variability.
+     * @param noiseLevel Maximum amplitude of the noise.
+     */
+    void addWeightNoise(float noiseLevel);
+
+    /**
+     * @brief Print the structure of the network.
+     * Outputs all nodes and synapses to the console.
+     */
+    void print() const;
 };
 
 } // namespace N3R
