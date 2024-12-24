@@ -1,206 +1,188 @@
-#include "LM.h"
+#include <unordered_map>
+#include <vector>
+#include <string>
 #include <cmath>
+#include <random>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
-#include <unordered_map>
-#include <vector>
 #include <algorithm>
-#include <cctype>
-#include <cstdlib>
+#include <numeric>
+#include "utils.h"
 
 namespace LM {
 
-// Storage
-namespace {
-std::unordered_map<std::string, std::unordered_map<std::string, float>> mtx; // Co-occurrence matrix
-std::unordered_map<std::string, std::vector<float>> emb; // Word and context embeddings
-size_t dim = 50;       // Embedding dimension
-float lr = 0.01f;      // Learning rate
-float decay = 0.001f;  // Decay rate
-
-// Utilities
-std::vector<std::string> tokenize(const std::string& text);
-std::string toLower(const std::string& text);
-std::string stripPunct(const std::string& text);
-bool isContext(const std::string& token);
-}
-
-// Initialize
-void init(size_t d) {
-    dim = d;
-    mtx.clear();
-    emb.clear();
-}
-
-// Build co-occurrence matrix
-void bldMtx(const std::string& path, size_t win) {
-    std::ifstream file(path);
-    if (!file.is_open()) throw std::runtime_error("Error: Failed to open file for co-occurrence matrix.");
-
-    std::string line;
-    while (std::getline(file, line)) {
-        auto tokens = tokenize(stripPunct(toLower(line)));
-        for (size_t i = 0; i < tokens.size(); ++i) {
-            for (size_t j = std::max(0, static_cast<int>(i) - static_cast<int>(win));
-                 j < std::min(tokens.size(), i + win + 1); ++j) {
-                if (i != j) mtx[tokens[i]][tokens[j]] += 1.0f;
+    class Model {
+    private:
+        std::unordered_map<std::string, std::vector<float>> embeddings; // Word embeddings
+        size_t dimension; // Dimensionality of embeddings
+        float learningRate; // Learning rate for updates
+        float regularization; // Regularization factor for training
+        float noiseFactor; // Noise factor for stochastic update
+    public:
+        // Constructor: Initialize the model
+        Model(size_t dim = 50, float lr = 0.01, float reg = 0.001, float noise = 0.01)
+            : dimension(dim), learningRate(lr), regularization(reg), noiseFactor(noise) {}
+    // Add a word with random initialization
+    void addWord(const std::string& word) {
+        if (embeddings.find(word) == embeddings.end()) {
+            embeddings[word] = std::vector<float>(dimension);
+            for (auto& val : embeddings[word]) {
+                val = randomFloat();
             }
+            normalizeVector(embeddings[word]);
         }
     }
-}
 
-// Add context embedding
-void addContextEmbedding(const std::string& context) {
-    if (!emb.count(context)) {
-        emb[context].resize(dim);
-        std::generate(emb[context].begin(), emb[context].end(),
-                      []() { return static_cast<float>(rand()) / RAND_MAX; });
-    }
-}
-
-// Pool embeddings dynamically for contexts
-std::vector<float> getContextEmbedding(const std::vector<std::string>& contexts) {
-    std::vector<float> pooled(dim, 0.0f);
-    for (const auto& ctx : contexts) {
-        if (emb.count(ctx)) {
-            for (size_t i = 0; i < dim; ++i) {
-                pooled[i] += emb[ctx][i];
-            }
+    // Retrieve the embedding vector for a given word
+    const std::vector<float>& getEmbedding(const std::string& word) const {
+        if (embeddings.find(word) == embeddings.end()) {
+            throw std::runtime_error("Word not found in embeddings.");
         }
+        return embeddings.at(word);
     }
-    for (float& val : pooled) val /= contexts.size(); // Average pooled embedding
-    return pooled;
-}
 
-// Relationship-driven update with context awareness
-void updWithContext(const std::vector<std::string>& contexts, const std::string& wrd, const std::string& ctx, float cnt) {
-    auto contextEmbedding = getContextEmbedding(contexts);
-    auto& wVec = emb[wrd];
-    auto& cVec = emb[ctx];
-    for (size_t i = 0; i < dim; ++i) {
-        float delta = lr * (contextEmbedding[i] * wVec[i] * cVec[i] - decay);
-        float noise = static_cast<float>(rand()) / RAND_MAX * decay;
-        wVec[i] = std::clamp(wVec[i] + delta + noise, 0.0f, 1.0f);
-        cVec[i] = std::clamp(cVec[i] + delta + noise, 0.0f, 1.0f);
-    }
-}
-
-// Competitive learning with recovery
-void competitiveUpdate() {
-    for (auto& [wrd, vec] : emb) {
-        float maxWeight = *std::max_element(vec.begin(), vec.end());
-        for (float& v : vec) {
-            v = (v == maxWeight) ? v + lr : v * (1.0f - decay) + decay * 0.01f; // Recovery term
+    // Update embeddings using a context-aware competitive learning algorithm
+    void updateWithContext(const std::vector<std::string>& contexts, const std::string& word, const std::string& contextWord, float coOccurrence) {
+        if (embeddings.find(word) == embeddings.end() || embeddings.find(contextWord) == embeddings.end()) {
+            return; // Skip updates for unknown words
         }
-    }
-}
 
-// Train with context
-void trnWithContext(const std::vector<std::string>& contexts, size_t epochs) {
-    for (size_t e = 0; e < epochs; ++e) {
-        for (const auto& [wrd, ctxs] : mtx) {
-            for (const auto& [ctx, cnt] : ctxs) {
-                if (emb.find(ctx) != emb.end()) {
-                    updWithContext(contexts, wrd, ctx, log(1 + cnt));
+        auto& wordVec = embeddings[word];
+        auto& contextVec = embeddings[contextWord];
+        std::vector<float> pooledContext = getContextEmbedding(contexts);
+
+        for (size_t i = 0; i < dimension; ++i) {
+            float gradient = (pooledContext[i] * wordVec[i] * contextVec[i]) - regularization;
+            wordVec[i] += learningRate * gradient;
+            contextVec[i] += learningRate * gradient;
+        }
+
+        // Add noise and normalize
+        addNoise(wordVec, noiseFactor);
+        addNoise(contextVec, noiseFactor);
+        normalizeVector(wordVec);
+        normalizeVector(contextVec);
+    }
+
+    // Pool embeddings for a set of contexts
+    std::vector<float> getContextEmbedding(const std::vector<std::string>& contexts) const {
+        std::vector<float> pooled(dimension, 0.0f);
+        for (const auto& ctx : contexts) {
+            if (embeddings.find(ctx) != embeddings.end()) {
+                for (size_t i = 0; i < dimension; ++i) {
+                    pooled[i] += embeddings.at(ctx)[i];
                 }
             }
         }
-        competitiveUpdate(); // Apply competitive pruning after each epoch
+        for (float& val : pooled) {
+            val /= contexts.size(); // Average pooling
+        }
+        return pooled;
     }
-    norm(); // Normalize embeddings after training
-}
 
-// Normalize embeddings with drift
-void norm() {
-    for (auto& [wrd, vec] : emb) {
-        float mag = std::sqrt(std::inner_product(vec.begin(), vec.end(), vec.begin(), 0.0f));
-        if (mag > 0) {
-            for (float& v : vec) {
-                v /= mag;
-                v += static_cast<float>(rand()) / RAND_MAX * 0.01f; // Add minor drift
+    // Competitive update for embeddings
+    void competitiveUpdate() {
+        for (auto& [word, vec] : embeddings) {
+            float maxVal = *std::max_element(vec.begin(), vec.end());
+            for (float& val : vec) {
+                val = (val == maxVal) ? val + learningRate : val * (1.0f - regularization);
             }
+            normalizeVector(vec);
         }
     }
-}
 
-// Add word
-void addWrd(const std::string& wrd) {
-    if (!emb.count(wrd)) {
-        emb[wrd].resize(dim);
-        std::generate(emb[wrd].begin(), emb[wrd].end(), []() { return static_cast<float>(rand()) / RAND_MAX; });
-    }
-}
-
-// Save embeddings
-void save(const std::string& path) {
-    std::ofstream file(path);
-    if (!file.is_open()) throw std::runtime_error("Error: Failed to save embeddings.");
-    for (const auto& [wrd, vec] : emb) {
-        file << wrd;
-        for (float v : vec) file << " " << v;
-        file << "\n";
-    }
-    for (const auto& [ctx, vec] : emb) {
-        if (isContext(ctx)) {
-            file << "CTX " << ctx;
-            for (float v : vec) file << " " << v;
-            file << "\n";
+    // Train embeddings for a given co-occurrence dataset
+    void train(const std::vector<std::tuple<std::string, std::string, float>>& coOccurrenceData, size_t epochs) {
+        for (size_t epoch = 0; epoch < epochs; ++epoch) {
+            for (const auto& [word, contextWord, coOccurrence] : coOccurrenceData) {
+                updateWithContext({contextWord}, word, contextWord, coOccurrence);
+            }
+            competitiveUpdate();
         }
     }
-}
-
-// Load embeddings
-void load(const std::string& path) {
-    std::ifstream file(path);
-    if (!file.is_open()) throw std::runtime_error("Error: Failed to load embeddings.");
-    std::string line, token;
-    while (std::getline(file, line)) {
-        std::istringstream stream(line);
-        stream >> token;
-        if (token == "CTX") {
-            std::string ctx;
-            stream >> ctx;
-            std::vector<float> vec(dim, 0.0f);
-            for (float& v : vec) stream >> v;
-            emb[ctx] = vec;
-        } else {
-            std::string wrd = token;
-            std::vector<float> vec(dim, 0.0f);
-            for (float& v : vec) stream >> v;
-            emb[wrd] = vec;
+    
+    void train(const CoOccurrenceData& data, size_t epochs) {
+        for (size_t epoch = 0; epoch < epochs; ++epoch) {
+            for (const auto& pair : data) {
+                updateWithContext(pair.first, pair.second);  // Train on each pair
+            }
+            std::cout << "Epoch " << epoch + 1 << "/" << epochs << " complete." << std::endl;
         }
     }
-}
 
-// Utility functions
-namespace {
-std::vector<std::string> tokenize(const std::string& txt) {
-    std::istringstream stream(txt);
-    std::vector<std::string> tokens;
-    std::string tok;
-    while (stream >> tok) tokens.push_back(tok);
-    return tokens;
-}
+    void updateWithContext(const std::vector<float>& context, const std::vector<float>& target) {
+        for (size_t i = 0; i < dimension; ++i) {
+            float hebbianUpdate = learningRate * context[i] * target[i];
+            float gradientUpdate = -regularization * weights[i];
+            weights[i] += 0.5f * (hebbianUpdate + gradientUpdate);
+        }
+    }
+    
 
-std::string toLower(const std::string& txt) {
-    std::string res = txt;
-    std::transform(res.begin(), res.end(), res.begin(), ::tolower);
-    return res;
-}
+    // Save embeddings to a JSON file
+    void save(const std::string& path) const {
+        std::ofstream file(path);
+        if (!file.is_open()) {
+            throw std::runtime_error("Failed to open file for saving embeddings.");
+        }
 
-std::string stripPunct(const std::string& txt) {
-    std::string res;
-    std::remove_copy_if(txt.begin(), txt.end(), std::back_inserter(res), ::ispunct);
-    return res;
-}
+        file << "{\n"; // Start JSON object
+        bool firstWord = true;
+        for (const auto& [word, vec] : embeddings) {
+            if (!firstWord) {
+                file << ",\n";
+            }
+            firstWord = false;
 
-bool isContext(const std::string& token) {
-    return token.find("CTX") == 0;
-}
-}
+            file << "  \"" << word << "\": [";
+            for (size_t i = 0; i < vec.size(); ++i) {
+                file << vec[i];
+                if (i < vec.size() - 1) {
+                    file << ", ";
+                }
+            }
+            file << "]";
+        }
+        file << "\n}\n"; // End JSON object
+    }
+
+    // Load embeddings from a JSON file
+    void load(const std::string& path) {
+        std::ifstream file(path);
+        if (!file.is_open()) {
+            throw std::runtime_error("Failed to open file for loading embeddings.");
+        }
+
+        embeddings.clear();
+        std::string line, word;
+        while (std::getline(file, line)) {
+            size_t keyStart = line.find("\"");
+            if (keyStart == std::string::npos) continue;
+            size_t keyEnd = line.find("\"", keyStart + 1);
+            word = line.substr(keyStart + 1, keyEnd - keyStart - 1);
+
+            size_t vecStart = line.find("[");
+            size_t vecEnd = line.find("]");
+            if (vecStart == std::string::npos || vecEnd == std::string::npos) continue;
+
+            std::string vecContent = line.substr(vecStart + 1, vecEnd - vecStart - 1);
+            std::istringstream stream(vecContent);
+            std::vector<float> vec;
+            float value;
+            while (stream >> value) {
+                vec.push_back(value);
+                if (stream.peek() == ',') {
+                    stream.ignore();
+                }
+            }
+            embeddings[word] = vec;
+        }
+    }
+};
 
 } // namespace LM
+
 
 
 

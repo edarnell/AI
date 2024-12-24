@@ -7,78 +7,40 @@
 
 namespace LM {
 
-/**
- * @brief Initialize the embedding system with a given dimension.
- * @param d The dimensionality of the embedding vectors.
- */
-void init(size_t d);
+    class Model {
+    private:
+        std::unordered_map<std::string, std::vector<float>> embeddings; 
+        size_t dimension;
+        float learningRate;
+        float regularization;
+        float noiseFactor;
 
-/**
- * @brief Build the co-occurrence matrix from a text file.
- * @param path The path to the input file.
- * @param win The context window size for co-occurrence.
- */
-void bldMtx(const std::string& path, size_t win);
+        float randomFloat();
+        void normalizeVector(std::vector<float>& vec);
+        void addNoise(std::vector<float>& vec, float factor);
 
-/**
- * @brief Add a new context-specific embedding.
- * @param context The unique context identifier.
- */
-void addContextEmbedding(const std::string& context);
+    public:
+        Model(size_t dim = 50, float lr = 0.01, float reg = 0.001, float noise = 0.01);
 
-/**
- * @brief Retrieve the pooled embedding vector for a set of contexts.
- * @param contexts The list of context identifiers.
- * @return A pooled embedding vector representing the contexts.
- */
-std::vector<float> getContextEmbedding(const std::vector<std::string>& contexts);
+        void addWord(const std::string& word);
+        const std::vector<float>& getEmbedding(const std::string& word) const;
 
-/**
- * @brief Update word embeddings using a context-aware mechanism.
- * @param contexts The list of context identifiers.
- * @param wrd The target word.
- * @param ctx The co-occurring word.
- * @param cnt The co-occurrence count.
- */
-void updWithContext(const std::vector<std::string>& contexts, const std::string& wrd, const std::string& ctx, float cnt);
+        void updateWithContext(const std::vector<std::string>& contexts,
+                               const std::string& word,
+                               const std::string& contextWord,
+                               float coOccurrence);
 
-/**
- * @brief Perform competitive updates to refine embeddings.
- */
-void competitiveUpdate();
+        std::vector<float> getContextEmbedding(const std::vector<std::string>& contexts) const;
+        void competitiveUpdate();
+        void train(const std::vector<std::tuple<std::string, std::string, float>>& coOccurrenceData, size_t epochs);
 
-/**
- * @brief Train embeddings with context-awareness over specified epochs.
- * @param contexts The list of context identifiers.
- * @param epochs The number of training epochs.
- */
-void trnWithContext(const std::vector<std::string>& contexts, size_t epochs);
-
-/**
- * @brief Normalize all embeddings to maintain stability.
- */
-void norm();
-
-/**
- * @brief Add a new word to the embedding space with randomized initialization.
- * @param wrd The word to add.
- */
-void addWrd(const std::string& wrd);
-
-/**
- * @brief Save all embeddings (words and contexts) to a file.
- * @param path The path to the output file.
- */
-void save(const std::string& path);
-
-/**
- * @brief Load embeddings (words and contexts) from a file.
- * @param path The path to the input file.
- */
-void load(const std::string& path);
+        void save(const std::string& path) const;
+        void load(const std::string& path);
+    };
 
 } // namespace LM
 
 #endif // LM_H
+
 
 

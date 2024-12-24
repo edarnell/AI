@@ -1,9 +1,15 @@
-
 #include "CPP.h"
 #include <cctype>
 #include <unordered_set>
 #include <sstream>
 #include <iostream>
+#include "utils.h"
+
+
+// Wrapper function for compatibility
+inline size_t FindClose(const std::vector<CPP::Tkn>& tokens, size_t start, char open, char close) {
+    return ::FindClose(tokens, start, open, close, [](const CPP::Tkn& token) { return token.val[0]; });
+}
 
 // Constructor
 CPP::CPP() {}
@@ -62,7 +68,7 @@ CPP::Nd CPP::Cls(const std::vector<Tkn>& tkns, size_t& index) {
         size_t closeIdx = FindClose(tkns, index, '{', '}');
         for (size_t i = index + 1; i < closeIdx; ++i) {
             if (tkns[i].type == Tkn::Kw && tkns[i].val == "void") {
-                node.ch.push_back(Func(tkns, i));
+                node.children.push_back(Func(tkns, i));
             }
         }
         index = closeIdx;
@@ -78,7 +84,7 @@ CPP::Nd CPP::Strct(const std::vector<Tkn>& tkns, size_t& index) {
         size_t closeIdx = FindClose(tkns, index, '{', '}');
         for (size_t i = index + 1; i < closeIdx; ++i) {
             if (tkns[i].type == Tkn::Kw && tkns[i].val == "int") {
-                node.ch.push_back({"var", tkns[i + 1].val, "int"});
+                node.children.push_back({"var", tkns[i + 1].val, "int"});
                 ++i;
             }
         }
@@ -106,7 +112,7 @@ CPP::Nd CPP::Enm(const std::vector<Tkn>& tkns, size_t& index) {
         size_t closeIdx = FindClose(tkns, index, '{', '}');
         for (size_t i = index + 1; i < closeIdx; ++i) {
             if (tkns[i].type == Tkn::Id) {
-                node.ch.push_back({"value", tkns[i].val, ""});
+                node.children.push_back({"value", tkns[i].val, ""});
             }
         }
         index = closeIdx;
@@ -120,7 +126,7 @@ CPP::Nd CPP::Tmplt(const std::vector<Tkn>& tkns, size_t& index) {
     index += 1;
     if (tkns[index].val == "<") {
         size_t closeIdx = FindClose(tkns, index, '<', '>');
-        node.val = tkns[index + 1].val; // Assume a single type parameter
+        node.value = tkns[index + 1].val; // Assume a single type parameter
         index = closeIdx;
     }
     return node;
@@ -150,16 +156,4 @@ CPP::Nd CPP::Co(const std::vector<Tkn>& tkns, size_t& index) {
     index += 2;
     return node;
 }
-
-// Find closing bracket
-size_t CPP::FindClose(const std::vector<Tkn>& tkns, size_t start, char open, char close) {
-    int depth = 0;
-    for (size_t i = start; i < tkns.size(); ++i) {
-        if (tkns[i].val[0] == open) depth++;
-        if (tkns[i].val[0] == close) depth--;
-        if (depth == 0) return i;
-    }
-    throw std::runtime_error("Mismatched brackets detected.");
-}
-
 
