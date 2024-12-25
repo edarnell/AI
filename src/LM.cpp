@@ -8,31 +8,35 @@
 #include <stdexcept>
 #include <algorithm>
 #include <numeric>
+#include <iostream>
 #include "utils.h"
+
+using CoOccurrenceData = std::vector<std::tuple<std::string, std::string, float>>;
 
 namespace LM {
 
     class Model {
-    private:
-        std::unordered_map<std::string, std::vector<float>> embeddings; // Word embeddings
-        size_t dimension; // Dimensionality of embeddings
-        float learningRate; // Learning rate for updates
-        float regularization; // Regularization factor for training
-        float noiseFactor; // Noise factor for stochastic update
-    public:
-        // Constructor: Initialize the model
-        Model(size_t dim = 50, float lr = 0.01, float reg = 0.001, float noise = 0.01)
-            : dimension(dim), learningRate(lr), regularization(reg), noiseFactor(noise) {}
-    // Add a word with random initialization
-    void addWord(const std::string& word) {
-        if (embeddings.find(word) == embeddings.end()) {
-            embeddings[word] = std::vector<float>(dimension);
-            for (auto& val : embeddings[word]) {
-                val = randomFloat();
+        private:
+            std::unordered_map<std::string, std::vector<float>> embeddings; // Word embeddings
+            size_t dimension; // Dimensionality of embeddings
+            float learningRate; // Learning rate for updates
+            float regularization; // Regularization factor for training
+            float noiseFactor; // Noise factor for stochastic update
+            std::vector<float> weights;
+        public:
+            // Constructor: Initialize the model
+            Model(size_t dim = 50, float lr = 0.01, float reg = 0.001, float noise = 0.01)
+                : dimension(dim), learningRate(lr), regularization(reg), noiseFactor(noise) {}
+        // Add a word with random initialization
+        void addWord(const std::string& word) {
+            if (embeddings.find(word) == embeddings.end()) {
+                embeddings[word] = std::vector<float>(dimension);
+                for (auto& val : embeddings[word]) {
+                    val = randomFloat();
+                }
+                normalizeVector(embeddings[word]);
             }
-            normalizeVector(embeddings[word]);
         }
-    }
 
     // Retrieve the embedding vector for a given word
     const std::vector<float>& getEmbedding(const std::string& word) const {
@@ -93,20 +97,12 @@ namespace LM {
     }
 
     // Train embeddings for a given co-occurrence dataset
-    void train(const std::vector<std::tuple<std::string, std::string, float>>& coOccurrenceData, size_t epochs) {
+    void train(const CoOccurrenceData& data, size_t epochs) {
         for (size_t epoch = 0; epoch < epochs; ++epoch) {
-            for (const auto& [word, contextWord, coOccurrence] : coOccurrenceData) {
+            for (const auto& [word, contextWord, coOccurrence] : data) {
                 updateWithContext({contextWord}, word, contextWord, coOccurrence);
             }
             competitiveUpdate();
-        }
-    }
-    
-    void train(const CoOccurrenceData& data, size_t epochs) {
-        for (size_t epoch = 0; epoch < epochs; ++epoch) {
-            for (const auto& pair : data) {
-                updateWithContext(pair.first, pair.second);  // Train on each pair
-            }
             std::cout << "Epoch " << epoch + 1 << "/" << epochs << " complete." << std::endl;
         }
     }

@@ -45,23 +45,6 @@ inline void addNoise(std::vector<float>& vec, float factor, float min = -1.0f, f
     }
 }
 
-// Parse a JSON-like line into a key-value map
-inline std::unordered_map<std::string, std::string> parseJSONLine(const std::string& line) {
-    std::unordered_map<std::string, std::string> parsed;
-    std::istringstream stream(line);
-    std::string key, value;
-    while (std::getline(stream, key, ':') && std::getline(stream, value, ',')) {
-        key = trim(key);
-        value = trim(value);
-        if (!key.empty() && !value.empty()) {
-            key = key.substr(1, key.size() - 2); // Remove quotes
-            value = value.substr(1, value.size() - 2); // Remove quotes
-            parsed[key] = value;
-        }
-    }
-    return parsed;
-}
-
 // Generic function to find the matching closing bracket in a tokenized list
 template <typename Container, typename Accessor>
 inline size_t FindClose(const Container& tokens, size_t start, char open, char close, Accessor accessor) {
@@ -76,6 +59,7 @@ inline size_t FindClose(const Container& tokens, size_t start, char open, char c
 }
 
 namespace Utils {
+    std::unordered_map<std::string, std::vector<std::string>> chat(const std::string& filePath, std::unordered_map<std::string, std::string>& nodeData);
     std::vector<std::pair<int64_t, std::string>> readTopic(const std::string& filePath, const std::string& topic);
     void appendToBzip2(const std::string& filePath, const std::string& topic, const std::vector<std::pair<int64_t, std::string>>& messages);
 }

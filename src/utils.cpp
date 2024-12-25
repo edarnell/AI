@@ -145,7 +145,17 @@ namespace Utils {
         throw std::runtime_error("Topic not found.");
     }
     
-    
+    std::string extractField(const std::string& input, const std::string& fieldName) {
+        size_t fieldStart = input.find("\"" + fieldName + "\":");
+        if (fieldStart == std::string::npos) return "";
+
+        size_t valueStart = input.find("\"", fieldStart + fieldName.length() + 3);
+        size_t valueEnd = input.find("\"", valueStart + 1);
+
+        if (valueStart == std::string::npos || valueEnd == std::string::npos) return "";
+        return input.substr(valueStart + 1, valueEnd - valueStart - 1);
+    }
+
     std::unordered_map<std::string, std::vector<std::string>> chat(
     const std::string& filePath,
     std::unordered_map<std::string, std::string>& nodeData) 

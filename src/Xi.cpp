@@ -79,7 +79,7 @@ namespace Xi {
         std::cout << "Model saved successfully to " << filePath << std::endl;
     }
 
-    void Xi::loadJSON() {
+    void loadJSON() {
         std::unordered_map<std::string, std::string> nodeData;
         auto parentChildMap = Utils::chat(fGPT, nodeData);
 
