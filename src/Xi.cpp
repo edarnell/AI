@@ -79,28 +79,29 @@ namespace Xi {
         std::cout << "Model saved successfully to " << filePath << std::endl;
     }
 
-    void loadJSON() {
-        std::ifstream file(fGPT);
-        if (!file.is_open()) {
-            throw std::runtime_error("Error: Unable to open JSON file at " + fGPT);
-        }
+    void Xi::loadJSON() {
+        std::unordered_map<std::string, std::string> nodeData;
+        auto parentChildMap = Utils::chat(fGPT, nodeData);
 
-        std::string line;
         size_t convoCount = 0;
-        while (std::getline(file, line)) {
-            auto convo = Utils::parseJSONLine(line);
-            if (convo.count("user_input") && convo.count("system_response")) {
-                const std::string userInput = convo["user_input"];
-                const std::string systemResponse = convo["system_response"];
 
-                nnet.addN(userInput, "input", 1.0f);
-                nnet.addN(systemResponse, "output", 0.0f);
-                nnet.addS(userInput, systemResponse, 0.5f);
+        // Traverse the parent-child map to reconstruct multi-turn conversations
+        for (const auto& [parent, children] : parentChildMap) {
+            std::string parentContent = nodeData[parent];
+
+            for (const auto& child : children) {
+                std::string childContent = nodeData[child];
+
+                // Example: Add parent-child relationship to the neural net
+                nnet.addN(parentContent, "input", 1.0f);
+                nnet.addN(childContent, "output", 0.0f);
+                nnet.addS(parentContent, childContent, 0.5f);
+
                 convoCount++;
             }
         }
 
-        std::cout << "Loaded " << convoCount << " conversations from " << fGPT << ".\n";
+        std::cout << "Processed " << convoCount << " conversational turns from chat data.\n";
     }
 
     void train(size_t epochs) {
