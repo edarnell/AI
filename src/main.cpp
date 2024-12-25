@@ -1,10 +1,16 @@
+#include <iostream>  // For std::cout, std::cin, std::endl
 #include "Xi.h"
 
 int main() {
-    Xi xi(100, 0.01, 0.001);
-    xi.init("data/model.bz2", "data/conversations.json");
-    xi.train(10);
-    xi.chat();
-
+    Xi::loadModel("data/model.bz2");
+    Xi::train(10);
+    // Example conversation loop
+    std::string userInput;
+    while (true) {
+        std::cout << "You: ";
+        std::getline(std::cin, userInput);
+        if (userInput == "exit") break;
+        std::cout << "Xi: " << Xi::generateResponse(userInput) << std::endl;
+    }
     return 0;
 }

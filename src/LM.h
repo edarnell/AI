@@ -11,8 +11,6 @@ namespace LM {
     private:
         std::unordered_map<std::string, std::vector<float>> embeddings; 
         size_t dimension;
-        float learningRate;
-        float regularization;
         float noiseFactor;
 
         float randomFloat();
@@ -20,6 +18,8 @@ namespace LM {
         void addNoise(std::vector<float>& vec, float factor);
 
     public:
+        float learningRate;
+        float regularization;
         Model(size_t dim = 50, float lr = 0.01, float reg = 0.001, float noise = 0.01);
 
         void addWord(const std::string& word);
@@ -33,7 +33,8 @@ namespace LM {
         std::vector<float> getContextEmbedding(const std::vector<std::string>& contexts) const;
         void competitiveUpdate();
         void train(const std::vector<std::tuple<std::string, std::string, float>>& coOccurrenceData, size_t epochs);
-
+        std::string serialize() const;
+        void deserialize(const std::string& data);
         void save(const std::string& path) const;
         void load(const std::string& path);
     };

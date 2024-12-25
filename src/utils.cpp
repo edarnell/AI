@@ -3,65 +3,9 @@
 #include <sstream>
 #include <iomanip>
 #include <cstdint>
+#include <bzlib.h>
 
 namespace {
-    
-    std::vector<std::pair<int64_t, std::string>> Utils::readTopic(const std::string& filePath, const std::string& topic) {
-        BZFILE* file = BZ2_bzopen(filePath.c_str(), "rb");
-        if (!file) throw std::runtime_error("Unable to open file for reading.");
-
-        constexpr int BUFFER_SIZE = 4096;
-        char buffer[BUFFER_SIZE];
-        std::string decompressedData;
-        int bytesRead;
-
-        while ((bytesRead = BZ2_bzread(file, buffer, BUFFER_SIZE)) > 0) {
-            decompressedData.append(buffer, bytesRead);
-
-            // Locate the topic marker
-            size_t topicPos = decompressedData.find("Topic: " + topic);
-            if (topicPos != std::string::npos) {
-                size_t nextTopicPos = decompressedData.find("Topic: ", topicPos + 1);
-                std::string topicData = decompressedData.substr(topicPos, nextTopicPos - topicPos);
-                BZ2_bzclose(file);
-
-                // Parse the topic data into timestamp/message pairs
-                std::vector<std::pair<int64_t, std::string>> messages;
-                std::istringstream topicStream(topicData);
-                std::string line;
-
-                while (std::getline(topicStream, line)) {
-                    if (line.starts_with("Topic: ")) continue; // Skip header
-                    size_t delimPos = line.find('|');
-                    if (delimPos != std::string::npos) {
-                        int64_t timestamp = std::stoll(line.substr(0, delimPos));
-                        std::string message = line.substr(delimPos + 1);
-                        messages.emplace_back(timestamp, message);
-                    }
-                }
-                return messages;
-            }
-        }
-
-        BZ2_bzclose(file);
-        throw std::runtime_error("Topic not found.");
-    }
-    
-    void Utils::appendToBzip2(const std::string& filePath, const std::string& topic, const std::vector<std::pair<int64_t, std::string>>& messages) {
-        BZFILE* file = BZ2_bzopen(filePath.c_str(), "ab");
-        if (!file) throw std::runtime_error("Unable to open file for appending.");
-
-        std::ostringstream oss;
-        oss << "Topic: " << topic << "\n";
-        for (const auto& [timestamp, message] : messages) {
-            oss << timestamp << "|" << message << "\n";
-        }
-
-        std::string topicData = oss.str();
-        BZ2_bzwrite(file, topicData.data(), topicData.size());
-        BZ2_bzclose(file);
-    }
-    
     // SHA-256 Constants
     const uint32_t k[64] = {
         0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -159,3 +103,105 @@ std::string sha256(const std::string &input) {
     }
     return hashStream.str();
 }
+namespace Utils {
+        std::vector<std::pair<int64_t, std::string>> readTopic(const std::string& filePath, const std::string& topic) {
+        BZFILE* file = BZ2_bzopen(filePath.c_str(), "rb");
+        if (!file) throw std::runtime_error("Unable to open file for reading.");
+
+        constexpr int BUFFER_SIZE = 4096;
+        char buffer[BUFFER_SIZE];
+        std::string decompressedData;
+        int bytesRead;
+
+        while ((bytesRead = BZ2_bzread(file, buffer, BUFFER_SIZE)) > 0) {
+            decompressedData.append(buffer, bytesRead);
+
+            // Locate the topic marker
+            size_t topicPos = decompressedData.find("Topic: " + topic);
+            if (topicPos != std::string::npos) {
+                size_t nextTopicPos = decompressedData.find("Topic: ", topicPos + 1);
+                std::string topicData = decompressedData.substr(topicPos, nextTopicPos - topicPos);
+                BZ2_bzclose(file);
+
+                // Parse the topic data into timestamp/message pairs
+                std::vector<std::pair<int64_t, std::string>> messages;
+                std::istringstream topicStream(topicData);
+                std::string line;
+
+                while (std::getline(topicStream, line)) {
+                    if (line.starts_with("Topic: ")) continue; // Skip header
+                    size_t delimPos = line.find('|');
+                    if (delimPos != std::string::npos) {
+                        int64_t timestamp = std::stoll(line.substr(0, delimPos));
+                        std::string message = line.substr(delimPos + 1);
+                        messages.emplace_back(timestamp, message);
+                    }
+                }
+                return messages;
+            }
+        }
+
+        BZ2_bzclose(file);
+        throw std::runtime_error("Topic not found.");
+    }
+    
+    
+    std::unordered_map<std::string, std::vector<std::string>> chat(
+    const std::string& filePath,
+    std::unordered_map<std::string, std::string>& nodeData) 
+    {
+        std::ifstream file(filePath);
+        if (!file.is_open()) {
+            throw std::runtime_error("Unable to open chat data file.");
+        }
+
+        std::string jsonStr((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+        std::unordered_map<std::string, std::vector<std::string>> parentChildMap;
+
+        size_t mappingStart = jsonStr.find("\"mapping\":");
+        if (mappingStart != std::string::npos) {
+            size_t mappingEnd = jsonStr.find("]", mappingStart);
+            std::string mappingContent = jsonStr.substr(mappingStart, mappingEnd - mappingStart + 1);
+
+            size_t nodeStart = 0;
+            while ((nodeStart = mappingContent.find("\"id\":", nodeStart)) != std::string::npos) {
+                size_t nodeEnd = mappingContent.find("}", nodeStart);
+                std::string nodeContent = mappingContent.substr(nodeStart, nodeEnd - nodeStart + 1);
+
+                std::string id = Utils::extractField(nodeContent, "id");
+                std::string parent = Utils::extractField(nodeContent, "parent");
+                std::string role = Utils::extractField(nodeContent, "role");
+                std::string content = Utils::extractField(nodeContent, "content");
+
+                if (!id.empty()) {
+                    nodeData[id] = content;
+                    if (!parent.empty()) {
+                        parentChildMap[parent].push_back(id);
+                    }
+                }
+
+                nodeStart = nodeEnd + 1;
+            }
+        }
+
+        return parentChildMap;
+    }
+
+    
+    void appendToBzip2(const std::string& filePath, const std::string& topic, const std::vector<std::pair<int64_t, std::string>>& messages) {
+        BZFILE* file = BZ2_bzopen(filePath.c_str(), "ab");
+        if (!file) throw std::runtime_error("Unable to open file for appending.");
+
+        std::ostringstream oss;
+        oss << "Topic: " << topic << "\n";
+        for (const auto& [timestamp, message] : messages) {
+            oss << timestamp << "|" << message << "\n";
+        }
+
+        std::string topicData = oss.str();
+        BZ2_bzwrite(file, topicData.data(), topicData.size());
+        BZ2_bzclose(file);
+    }
+}
+

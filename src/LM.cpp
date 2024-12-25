@@ -149,38 +149,90 @@ namespace LM {
 
     // Load embeddings from a JSON file
     void load(const std::string& path) {
-        std::ifstream file(path);
-        if (!file.is_open()) {
-            throw std::runtime_error("Failed to open file for loading embeddings.");
-        }
-
-        embeddings.clear();
-        std::string line, word;
-        while (std::getline(file, line)) {
-            size_t keyStart = line.find("\"");
-            if (keyStart == std::string::npos) continue;
-            size_t keyEnd = line.find("\"", keyStart + 1);
-            word = line.substr(keyStart + 1, keyEnd - keyStart - 1);
-
-            size_t vecStart = line.find("[");
-            size_t vecEnd = line.find("]");
-            if (vecStart == std::string::npos || vecEnd == std::string::npos) continue;
-
-            std::string vecContent = line.substr(vecStart + 1, vecEnd - vecStart - 1);
-            std::istringstream stream(vecContent);
-            std::vector<float> vec;
-            float value;
-            while (stream >> value) {
-                vec.push_back(value);
-                if (stream.peek() == ',') {
-                    stream.ignore();
-                }
+            std::ifstream file(path);
+            if (!file.is_open()) {
+                throw std::runtime_error("Failed to open file for loading embeddings.");
             }
-            embeddings[word] = vec;
+
+            embeddings.clear();
+            std::string line, word;
+            while (std::getline(file, line)) {
+                size_t keyStart = line.find("\"");
+                if (keyStart == std::string::npos) continue;
+                size_t keyEnd = line.find("\"", keyStart + 1);
+                word = line.substr(keyStart + 1, keyEnd - keyStart - 1);
+
+                size_t vecStart = line.find("[");
+                size_t vecEnd = line.find("]");
+                if (vecStart == std::string::npos || vecEnd == std::string::npos) continue;
+
+                std::string vecContent = line.substr(vecStart + 1, vecEnd - vecStart - 1);
+                std::istringstream stream(vecContent);
+                std::vector<float> vec;
+                float value;
+                while (stream >> value) {
+                    vec.push_back(value);
+                    if (stream.peek() == ',') {
+                        stream.ignore();
+                    }
+                }
+                embeddings[word] = vec;
+            }
         }
     }
-};
 
+    std::string serialize() const {
+        std::ostringstream oss(std::ios::binary);
+        int version = 1;
+        oss.write(reinterpret_cast<const char*>(&version), sizeof(version));
+
+        size_t mapSize = embeddings.size();
+        oss.write(reinterpret_cast<const char*>(&mapSize), sizeof(mapSize));
+
+        for (const auto& [word, vec] : embeddings) {
+            size_t wordLen = word.size();
+            oss.write(reinterpret_cast<const char*>(&wordLen), sizeof(wordLen));
+            oss.write(word.data(), wordLen);
+
+            size_t vecSize = vec.size();
+            oss.write(reinterpret_cast<const char*>(&vecSize), sizeof(vecSize));
+            oss.write(reinterpret_cast<const char*>(vec.data()), vecSize * sizeof(float));
+        }
+
+        return oss.str();
+    }
+
+    void deserialize(const std::string& data) {
+        std::istringstream iss(data, std::ios::binary);
+        int version;
+        iss.read(reinterpret_cast<char*>(&version), sizeof(version));
+        if (version != 1) {
+            throw std::runtime_error("Unsupported model version.");
+        }
+
+        size_t mapSize;
+        iss.read(reinterpret_cast<char*>(&mapSize), sizeof(mapSize));
+
+        embeddings.clear();
+        for (size_t i = 0; i < mapSize; ++i) {
+            size_t wordLen;
+            iss.read(reinterpret_cast<char*>(&wordLen), sizeof(wordLen));
+            std::string word(wordLen, '\0');
+            iss.read(&word[0], wordLen);
+
+            size_t vecSize;
+            iss.read(reinterpret_cast<char*>(&vecSize), sizeof(vecSize));
+            std::vector<float> vec(vecSize);
+            iss.read(reinterpret_cast<char*>(vec.data()), vecSize * sizeof(float));
+
+            embeddings[word] = vec;
+        }
+
+        if (iss.fail()) {
+            throw std::runtime_error("Failed to deserialize model.");
+        }
+    }
+    
 } // namespace LM
 
 

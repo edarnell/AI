@@ -1,11 +1,11 @@
 # Compiler and Flags
 CC = g++
-CFLAGS = -std=c++17 -Wall -Isrc
+CFLAGS = -Wall -Isrc -lbz2 -std=c++20
 
 # Default Target
 all:
 	mkdir -p bin
-	$(CC) $(CFLAGS) src/Xi.cpp src/utils.cpp src/gpt.cpp src/CPP.cpp src/N3R.cpp src/LM.cpp -o bin/xi
+	$(CC) $(CFLAGS) src/main.cpp src/utils.cpp src/Xi.cpp src/CPP.cpp src/N3R.cpp src/LM.cpp -o bin/xi
 
 # Clean Up
 clean:

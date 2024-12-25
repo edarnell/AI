@@ -75,6 +75,12 @@ inline size_t FindClose(const Container& tokens, size_t start, char open, char c
     throw std::runtime_error("Mismatched brackets detected.");
 }
 
+namespace Utils {
+    std::vector<std::pair<int64_t, std::string>> readTopic(const std::string& filePath, const std::string& topic);
+    void appendToBzip2(const std::string& filePath, const std::string& topic, const std::vector<std::pair<int64_t, std::string>>& messages);
+}
+
+
 #endif // UTILS_H
 
 
