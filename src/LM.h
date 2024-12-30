@@ -4,44 +4,56 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <tuple>
 
-namespace LM {
+using CoOccurrenceData = std::vector<std::tuple<std::string, std::string, float>>;
 
-    class Model {
-    private:
-        std::unordered_map<std::string, std::vector<float>> embeddings; 
-        size_t dimension;
-        float noiseFactor;
+class LM {
+private:
+    std::unordered_map<std::string, std::vector<float>> embeddings; // Word embeddings
+    // Helper functions for internal use
+    float randomFloat();
+    void normalizeVector(std::vector<float>& vec);
+    void addNoise(std::vector<float>& vec, float factor);
+public:
+    int dim=50;               // Dimensionality of embeddings
+    float lr=0.01;             // Learning rate for updates
+    float reg=0.001;           // Regularization factor for training
+    float noise=0.01;              // Noise factor for stochastic updates
 
-        float randomFloat();
-        void normalizeVector(std::vector<float>& vec);
-        void addNoise(std::vector<float>& vec, float factor);
+    // Constructor
+    LM(int dim, float lr, float reg, float noise);
 
-    public:
-        float learningRate;
-        float regularization;
-        Model(size_t dim = 50, float lr = 0.01, float reg = 0.001, float noise = 0.01);
+    // Methods for managing words and embeddings
+    void addWord(const std::string& word);
+    const std::vector<float>& getEmbedding(const std::string& word) const;
 
-        void addWord(const std::string& word);
-        const std::vector<float>& getEmbedding(const std::string& word) const;
+    // Context-aware embedding updates
+    void updateWithContext(const std::vector<std::string>& contexts,
+                           const std::string& word,
+                           const std::string& contextWord,
+                           float coOccurrence);
 
-        void updateWithContext(const std::vector<std::string>& contexts,
-                               const std::string& word,
-                               const std::string& contextWord,
-                               float coOccurrence);
+    std::vector<float> getContextEmbedding(const std::vector<std::string>& contexts) const;
 
-        std::vector<float> getContextEmbedding(const std::vector<std::string>& contexts) const;
-        void competitiveUpdate();
-        void train(const std::vector<std::tuple<std::string, std::string, float>>& coOccurrenceData, size_t epochs);
-        std::string serialize() const;
-        void deserialize(const std::string& data);
-        void save(const std::string& path) const;
-        void load(const std::string& path);
-    };
+    // Competitive learning updates
+    void competitiveUpdate();
 
-} // namespace LM
+    // Training
+    void train(const std::vector<std::tuple<std::string, std::string, float>>& coOccurrenceData, size_t epochs);
+
+    // Serialization and deserialization
+    std::string serialize() const;
+    void deserialize(const std::string& data);
+
+    // File I/O for embeddings
+    void save(const std::string& path) const;
+    void load(const std::string& path);
+};
 
 #endif // LM_H
+
+
 
 
 

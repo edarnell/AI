@@ -11,12 +11,13 @@
 #include "LM.h"     // Model 
 #include "N3R.h"    // Neural Network logic
 #include "Xi.h" 
+#include "zip.h"
 
 
 namespace Xi {
 
     // Global state for training and model management
-    LM::Model model(100, 0.01, 0.001);
+    LM model(50, 0.01, 0.001, 0.01);
     const std::string fM = "data/model.bz2";
     const std::string fGPT = "data/conversations.json";
 
@@ -25,19 +26,33 @@ namespace Xi {
 
     void loadModel(const std::string& f) {
         std::cout << "Loading model: " << f << std::endl;
-        // Load and train on updated data
-        if (sha256(fGPT) != sha) {
+
+        try {
+            // Try to load the existing model
             load(f);
-            std::cout << "New data detected. Incremental training starting...\n";
-            loadJSON();
+            std::cout << "Model loaded successfully." << std::endl;
+
+            if (sha256(fGPT) != sha) {
+                std::cout << "New data detected. Incremental training starting...\n";
+                ldzJSON("data/gpt.zip", "conversations.json");
+                train(10);
+                sha = sha256(fGPT);
+                save(f);
+                std::cout << "Training complete. Model updated." << std::endl;
+            } else {
+                std::cout << "No data updates. Model is up to date.\n";
+            }
+        } catch (const std::runtime_error& e) {
+            // If loading fails, train from gpt.zip and save the model
+            std::cerr << "Error loading model: " << e.what() << "\nTraining new model from gpt.zip..." << std::endl;
+
+            ldzJSON("data/gpt.zip", "conversations.json");
             train(10);
-            sha = sha256(fGPT);
             save(f);
-            std::cout << "Training complete. Model updated." << std::endl;
-        } else {
-            std::cout << "No data updates. Model is up to date.\n";
+            std::cout << "New model trained and saved to " << f << std::endl;
         }
     }
+
     
     void load(const std::string& filePath) {
         BZFILE* file = BZ2_bzopen(filePath.c_str(), "rb");
@@ -103,6 +118,44 @@ namespace Xi {
 
         std::cout << "Processed " << convoCount << " conversational turns from chat data.\n";
     }
+    
+    void ldzJSON(const std::string& zf, const std::string& fn) {
+        std::unordered_map<std::string, std::string> nodeData;
+
+        Zip zip(zf);  // Open the zip file
+
+        zip.ext(fn, [&nodeData](const char* buf, size_t sz) {
+            static std::string buffer;
+
+            // Append chunk to buffer
+            buffer.append(buf, sz);
+
+            // Attempt parsing JSON from buffer
+            try {
+                auto parentChildMap = Utils::chat(buffer, nodeData);
+
+                // Process parsed data
+                for (const auto& [parent, children] : parentChildMap) {
+                    std::string parentContent = nodeData[parent];
+                    for (const auto& child : children) {
+                        std::string childContent = nodeData[child];
+
+                        // Add relationships to the neural network
+                        nnet.addN(parentContent, "input", 1.0f);
+                        nnet.addN(childContent, "output", 0.0f);
+                        nnet.addS(parentContent, childContent, 0.5f);
+                    }
+                }
+
+                // Clear buffer after processing (optional)
+                buffer.clear();
+            } catch (const std::exception&) {
+                // JSON not complete, continue collecting chunks
+            }
+        });
+
+        std::cout << "Loaded JSON from " << fn << " in " << zf << std::endl;
+    }
 
     void train(size_t epochs) {
         for (size_t e = 0; e < epochs; ++e) {
@@ -117,8 +170,8 @@ namespace Xi {
     }
 
     void adjustParameters(size_t epoch) {
-        model.learningRate = std::max(0.001f, model.learningRate * 0.95f);
-        model.regularization += 0.0001f * epoch;
+        model.lr = std::max(0.001f, model.lr * 0.95f);
+        model.reg += 0.0001f * epoch;
     }
 
     std::string generateResponse(const std::string& userInput) {
