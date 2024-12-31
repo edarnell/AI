@@ -62,6 +62,9 @@ namespace Utils {
     std::unordered_map<std::string, std::vector<std::string>> chat(const std::string& filePath, std::unordered_map<std::string, std::string>& nodeData);
     std::vector<std::pair<int64_t, std::string>> readTopic(const std::string& filePath, const std::string& topic);
     void appendToBzip2(const std::string& filePath, const std::string& topic, const std::vector<std::pair<int64_t, std::string>>& messages);
+    enum class Log { NONE, ERROR, INFO, DEBUG };
+    void log(Log lvl, const std::string& msg);
+    void setLog(Log lvl);
 }
 
 

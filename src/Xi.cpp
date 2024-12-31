@@ -23,6 +23,50 @@ namespace Xi {
 
     N3R::NNet nnet;
     std::string sha; // Track last trained state
+    
+void Xi::trn3R(const std::vector<TrnData>& data, float l, float t, float alpha, float beta, int maxE) {
+        if (data.empty()) {
+            log(Log::ERROR, "Training data is empty. Cannot train.");
+            throw std::runtime_error("Training data is empty. Cannot train.");
+        }
+        if (maxE <= 0) {
+            log(Log::ERROR, "Maximum number of epochs must be greater than zero.");
+            throw std::runtime_error("Maximum number of epochs must be greater than zero.");
+        }
+
+        float prevL = std::numeric_limits<float>::max(); // Previous loss for convergence check
+        float loss = 0.0f; // Current loss
+
+        for (int en = 0; en < maxE; ++en) {
+            loss = 0.0f; // Reset loss for each epoch
+
+            for (const auto& r : data) {
+                auto tgtE = model.getE(r.tgt);
+                auto ctxE = model.getE(r.ctx);
+
+                // Update embeddings using plasticity
+                model.updE(tgtE, ctxE, l, alpha);
+
+                // Calculate loss
+                float d = std::inner_product(tgtE.begin(), tgtE.end(), ctxE.begin(), 0.0f);
+                loss += model.calcL(d, r.lbl);
+            }
+
+            // Apply forgetting (decay unused connections) every 5 epochs
+            if (en % 5 == 0) model.dcyW(beta);
+
+            // Log progress based on log level
+            log(Log::DEBUG, "Epoch " + std::to_string(en + 1) + ": Loss = " + std::to_string(loss / data.size()));
+
+            // Convergence check
+            if (std::abs(prevL - loss) < t) {
+                log(Log::INFO, "Convergence after " + std::to_string(en + 1) + " epochs.");
+                break;
+            }
+
+            prevL = loss; // Update previous loss
+        }
+    }
 
     void loadModel(const std::string& f) {
         std::cout << "Loading model: " << f << std::endl;
@@ -93,85 +137,40 @@ namespace Xi {
         BZ2_bzclose(file);
         std::cout << "Model saved successfully to " << filePath << std::endl;
     }
-
-    void loadJSON() {
-        std::unordered_map<std::string, std::string> nodeData;
-        auto parentChildMap = Utils::chat(fGPT, nodeData);
-
-        size_t convoCount = 0;
-
-        // Traverse the parent-child map to reconstruct multi-turn conversations
-        for (const auto& [parent, children] : parentChildMap) {
-            std::string parentContent = nodeData[parent];
-
-            for (const auto& child : children) {
-                std::string childContent = nodeData[child];
-
-                // Example: Add parent-child relationship to the neural net
-                nnet.addN(parentContent, "input", 1.0f);
-                nnet.addN(childContent, "output", 0.0f);
-                nnet.addS(parentContent, childContent, 0.5f);
-
-                convoCount++;
-            }
-        }
-
-        std::cout << "Processed " << convoCount << " conversational turns from chat data.\n";
-    }
     
-    void ldzJSON(const std::string& zf, const std::string& fn) {
-        std::unordered_map<std::string, std::string> nodeData;
+    void ldzJSON(const std::string& zf, const std::string& fn, int ep, float lr, float t, float a, float b) {
+        Zip z(zf);  // Open the zip file
 
-        Zip zip(zf);  // Open the zip file
+        z.ext(fn, [&](const char* buf, size_t sz) {
+            static std::string bufStr; // Accumulate data from chunks
+            bufStr.append(buf, sz);
 
-        zip.ext(fn, [&nodeData](const char* buf, size_t sz) {
-            static std::string buffer;
-
-            // Append chunk to buffer
-            buffer.append(buf, sz);
-
-            // Attempt parsing JSON from buffer
             try {
-                auto parentChildMap = Utils::chat(buffer, nodeData);
+                std::unordered_map<std::string, std::string> nd; // Node data
+                auto pcm = Utils::chat(bufStr, nd);  // Parent-child map
 
-                // Process parsed data
-                for (const auto& [parent, children] : parentChildMap) {
-                    std::string parentContent = nodeData[parent];
-                    for (const auto& child : children) {
-                        std::string childContent = nodeData[child];
-
-                        // Add relationships to the neural network
-                        nnet.addN(parentContent, "input", 1.0f);
-                        nnet.addN(childContent, "output", 0.0f);
-                        nnet.addS(parentContent, childContent, 0.5f);
+                std::vector<Xi::TrnData> td; // Training data
+                for (const auto& [p, cList] : pcm) {
+                    std::string pc = nd[p]; // Parent content
+                    for (const auto& c : cList) {
+                        std::string cc = nd[c]; // Child content
+                        td.emplace_back(pc, cc, 1.0f);
                     }
                 }
 
-                // Clear buffer after processing (optional)
-                buffer.clear();
+                // Train on this chunk
+                if (!td.empty()) {
+                    Xi::trn3R(td, lr, t, a, b, ep);
+                    std::cout << "Trained on " << td.size() << " samples.\n";
+                }
+
+                bufStr.clear(); // Clear buffer after processing
             } catch (const std::exception&) {
-                // JSON not complete, continue collecting chunks
+                // JSON incomplete, continue accumulating chunks
             }
         });
 
-        std::cout << "Loaded JSON from " << fn << " in " << zf << std::endl;
-    }
-
-    void train(size_t epochs) {
-        for (size_t e = 0; e < epochs; ++e) {
-            nnet.fwd();
-            std::cout << "Training epoch " << e + 1 << "/" << epochs << std::endl;
-            nnet.addWeightNoise(0.01f);
-            adjustParameters(e);
-        }
-
-        nnet.validate();
-        std::cout << "Training completed over " << epochs << " epochs.\n";
-    }
-
-    void adjustParameters(size_t epoch) {
-        model.lr = std::max(0.001f, model.lr * 0.95f);
-        model.reg += 0.0001f * epoch;
+        std::cout << "Training completed from " << fn << " in " << zf << ".\n";
     }
 
     std::string generateResponse(const std::string& userInput) {

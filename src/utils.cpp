@@ -213,5 +213,28 @@ namespace Utils {
         BZ2_bzwrite(file, topicData.data(), topicData.size());
         BZ2_bzclose(file);
     }
+    
+    Log logL = Log::ERROR; // Default logging level
+
+    void log(Log l, const std::string& m) {
+        if (l <= logL) {
+            std::ofstream f("log.txt", std::ios::out | std::ios::app); // Append mode
+            if (!f) {
+                std::cerr << "Failed to open log file for writing." << std::endl;
+                return; // Avoid throwing during logging
+            }
+            f << m << std::endl;
+            f.close();
+
+            // Optional: Print to console for higher log levels
+            if (l == Log::ERROR || l == Log::INFO) {
+                std::cout << m << std::endl;
+            }
+        }
+    }
+
+    void setLog(Log l) {
+        logL = l;
+    }
 }
 
