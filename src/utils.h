@@ -10,6 +10,7 @@
 #include <numeric>
 #include <fstream>
 #include <iomanip>
+#include <iostream>
 
 // Full SHA-256 hash implementation
     std::string sha256(const std::string &input);
